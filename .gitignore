@@ -3,3 +3,5 @@
 /runs/
 /.venv/
 __pycache__/
+/mod/bin/
+/mod/obj/

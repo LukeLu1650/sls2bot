@@ -124,7 +124,7 @@ class NecroPolicy:
     def _candidate_embeddings(self, state, actions):
         if not actions:
             raise ValueError("A decision requires at least one candidate")
-        tokens = _tokens(state, actions)
+        tokens = self.tokens(state, actions)
         x = np.zeros((len(tokens), self.width), dtype=np.float32)
         for row, features in enumerate(tokens):
             for label, value in features:
@@ -166,10 +166,15 @@ class NecroPolicy:
         self.readout[:] = updated
         return float(loss)
 
-    def __call__(self, state, actions):
+    tokens = staticmethod(_tokens)
+
+    def scores(self, state, actions):
         candidates = self._candidate_embeddings(state, actions)
         logits = candidates @ self.readout + self.readout_bias
         if not np.isfinite(logits).all():
             raise FloatingPointError("Nonfinite policy scores")
         self.forward_calls += 1
-        return int(np.argmax(logits))
+        return logits
+
+    def __call__(self, state, actions):
+        return int(np.argmax(self.scores(state, actions)))

@@ -1,0 +1,935 @@
+{
+  "build": "v0.113.1",
+  "game_commit": "d09d48e5",
+  "host_revision": "9842f7dbb52f2b35d2bad73728f9c7ac54679ed9",
+  "mode": "standard",
+  "parameter_count": 18099905,
+  "model_sha256": "d771eeddf0a58736f876f20409354992f095c6dbcf22d373436fe175e1e69492",
+  "encoder_sha256": "d41d4714ade46daa3a2e32357a186bd61d818db2c0c5fc2c615b19b24b4a314c",
+  "training": [
+    {
+      "seed": "N4JBK7A6XJUC",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "combat_cleared",
+      "victory": null,
+      "hp": 66,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 12,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 10,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "play_card": 8,
+        "end_turn": 2
+      },
+      "elapsed_seconds": 1.6560000000026776
+    },
+    {
+      "seed": "UFQLS6D9FWN5",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "combat_cleared",
+      "victory": null,
+      "hp": 63,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 16,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 14,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "play_card": 11,
+        "end_turn": 3
+      },
+      "elapsed_seconds": 1.6089999999967404
+    },
+    {
+      "seed": "54VBJJXP7UA9",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "combat_cleared",
+      "victory": null,
+      "hp": 64,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 17,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 15,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "play_card": 12,
+        "end_turn": 3
+      },
+      "elapsed_seconds": 1.375
+    },
+    {
+      "seed": "V4TNAHLSWFA8",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "combat_cleared",
+      "victory": null,
+      "hp": 66,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 12,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 10,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "play_card": 8,
+        "end_turn": 2
+      },
+      "elapsed_seconds": 1.312999999994645
+    }
+  ],
+  "demonstrations": 50,
+  "epochs": 10,
+  "losses": [
+    1.5389061880111694,
+    1.4590648078918458,
+    1.4074898278713226,
+    1.3717342031002044,
+    1.345280466079712,
+    1.3247858881950378,
+    1.3075193274021149,
+    1.2927887630462647,
+    1.2795075058937073,
+    1.2675368404388427
+  ],
+  "dev_seeds": [
+    "D5R6LJ3YBXP4",
+    "WF5GF6QHXBUP",
+    "96KBYZR5SR28",
+    "YQP8RN5NHMW4",
+    "AXTMZZV65F3X",
+    "HJXLBBEKZW7R",
+    "UTX7QGLY5HE2",
+    "UFTFHN52UZ45"
+  ],
+  "cohorts": {
+    "base": [
+      {
+        "seed": "D5R6LJ3YBXP4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 36,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 204,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 202,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 136,
+          "end_turn": 66
+        },
+        "elapsed_seconds": 4.764999999999418
+      },
+      {
+        "seed": "WF5GF6QHXBUP",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 38,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 36,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 20,
+          "end_turn": 16
+        },
+        "elapsed_seconds": 1.6880000000091968
+      },
+      {
+        "seed": "96KBYZR5SR28",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 43,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 41,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 22,
+          "end_turn": 19
+        },
+        "elapsed_seconds": 1.75
+      },
+      {
+        "seed": "YQP8RN5NHMW4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 43,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "card_select": 1,
+          "map_select": 1,
+          "combat_play": 40,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "skip_select": 1,
+          "select_map_node": 1,
+          "end_turn": 13,
+          "play_card": 27
+        },
+        "elapsed_seconds": 1.764999999999418
+      },
+      {
+        "seed": "AXTMZZV65F3X",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 44,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 42,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 29,
+          "end_turn": 13
+        },
+        "elapsed_seconds": 1.7819999999919673
+      },
+      {
+        "seed": "HJXLBBEKZW7R",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 64,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 61,
+          "card_select": 1,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 40,
+          "use_potion": 1,
+          "select_cards": 1,
+          "end_turn": 20
+        },
+        "elapsed_seconds": 2.6560000000026776
+      },
+      {
+        "seed": "UTX7QGLY5HE2",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "step_limit",
+        "victory": null,
+        "hp": 66,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 320,
+        "error": "Action step limit reached",
+        "error_code": "max_steps",
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 319
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 221,
+          "end_turn": 96,
+          "use_potion": 1
+        },
+        "elapsed_seconds": 6.64100000000326
+      },
+      {
+        "seed": "UFTFHN52UZ45",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "defeat",
+        "victory": false,
+        "hp": 0,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 54,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 52,
+          "game_over": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 36,
+          "end_turn": 15,
+          "use_potion": 1
+        },
+        "elapsed_seconds": 1.889999999999418
+      }
+    ],
+    "teacher": [
+      {
+        "seed": "D5R6LJ3YBXP4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 64,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 26,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "card_select": 1,
+          "map_select": 1,
+          "combat_play": 23,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_cards": 1,
+          "select_map_node": 1,
+          "play_card": 18,
+          "end_turn": 5
+        },
+        "elapsed_seconds": 1.2970000000059372
+      },
+      {
+        "seed": "WF5GF6QHXBUP",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 54,
+        "max_hp": 54,
+        "act": 1,
+        "floor": 2,
+        "steps": 16,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 14,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 11,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.1409999999887077
+      },
+      {
+        "seed": "96KBYZR5SR28",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 58,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 19,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 17,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 13,
+          "end_turn": 4
+        },
+        "elapsed_seconds": 1.1720000000059372
+      },
+      {
+        "seed": "YQP8RN5NHMW4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 66,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 19,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "bundle_select": 1,
+          "map_select": 1,
+          "combat_play": 16,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_bundle": 1,
+          "select_map_node": 1,
+          "play_card": 13,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.1710000000020955
+      },
+      {
+        "seed": "AXTMZZV65F3X",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 66,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 20,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 18,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 14,
+          "end_turn": 4
+        },
+        "elapsed_seconds": 1.0939999999973224
+      },
+      {
+        "seed": "HJXLBBEKZW7R",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 65,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 19,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 17,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 13,
+          "end_turn": 4
+        },
+        "elapsed_seconds": 1.125
+      },
+      {
+        "seed": "UTX7QGLY5HE2",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 66,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 16,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 14,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 11,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.125
+      },
+      {
+        "seed": "UFTFHN52UZ45",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 63,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 19,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 17,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 13,
+          "end_turn": 4
+        },
+        "elapsed_seconds": 1.062999999994645
+      }
+    ],
+    "student": [
+      {
+        "seed": "D5R6LJ3YBXP4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 53,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 23,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 21,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 16,
+          "end_turn": 5
+        },
+        "elapsed_seconds": 1.625
+      },
+      {
+        "seed": "WF5GF6QHXBUP",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 60,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 17,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 15,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 12,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.3910000000032596
+      },
+      {
+        "seed": "96KBYZR5SR28",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 55,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 15,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 13,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 10,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.7660000000032596
+      },
+      {
+        "seed": "YQP8RN5NHMW4",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 63,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 16,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "card_select": 1,
+          "map_select": 1,
+          "combat_play": 13,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_cards": 1,
+          "select_map_node": 1,
+          "play_card": 10,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.437000000005355
+      },
+      {
+        "seed": "AXTMZZV65F3X",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 64,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 16,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 14,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 11,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.6719999999913853
+      },
+      {
+        "seed": "HJXLBBEKZW7R",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 55,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 15,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 13,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 10,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.4060000000026776
+      },
+      {
+        "seed": "UTX7QGLY5HE2",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 66,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 12,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 10,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 8,
+          "end_turn": 2
+        },
+        "elapsed_seconds": 1.3910000000032596
+      },
+      {
+        "seed": "UFTFHN52UZ45",
+        "mode": "standard",
+        "requested_ascension": 0,
+        "ascension": 0,
+        "status": "combat_cleared",
+        "victory": null,
+        "hp": 58,
+        "max_hp": 66,
+        "act": 1,
+        "floor": 2,
+        "steps": 15,
+        "error": null,
+        "error_code": null,
+        "decisions": {
+          "event_choice": 1,
+          "map_select": 1,
+          "combat_play": 13,
+          "card_reward": 1
+        },
+        "actions": {
+          "choose_option": 1,
+          "select_map_node": 1,
+          "play_card": 10,
+          "end_turn": 3
+        },
+        "elapsed_seconds": 1.3119999999908032
+      }
+    ]
+  },
+  "showcase_runs": [
+    {
+      "seed": "D5R6LJ3YBXP4",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "engine_error",
+      "victory": null,
+      "hp": 53,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 4,
+      "steps": 28,
+      "error": "Action 'choose_option' failed: NullReferenceException: Object reference not set to an instance of an object.",
+      "error_code": null,
+      "stderr_tail": ": 1864 Epochs: 66 Properties: 53 Hash: 1748280997\r\n[INFO] ModelIdSerializationCache initialized\r\n[SIM] Creating RunState with mode=Standard asc=0 seed=D5R6LJ3YBXP4\r\n[INFO] File `release_info.json` not found in any of the expected locations.\r\n[SIM] Rooms generated\r\n[SIM] Run launched\r\n[SIM] Starting relics finalized\r\n[WARN] Asset not cached: res://images/enchantments/missing_enchantment.png\r\n[WARN] Asset not cached: res://images/packed/energy_icons/energy_necrobinder.png\r\n[SIM] Entered Act 0\r\n[SIM] Choosing option 1\r\n[SIM] Event Neow finished, proceeding\r\n[SIM] Moving to map coord (3,1)\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card Bodyguard (index 2) targeting none\r\n[INFO] Player 1 playing card BODYGUARD (no target)\r\n[SIM] Ending turn (round=1)\r\n[SIM] Playing card Unleash (index 4) targeting LeafSlimeM\r\n[INFO] Player 1 playing card UNLEASH (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Ending turn (round=2)\r\n[SIM] Playing card Unleash (index 2) targeting LeafSlimeM\r\n[INFO] Player 1 playing card UNLEASH (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting TwigSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting TWIG_SLIME_S.name (index 3))\r\n[SIM] Playing card Bodyguard (index 2) targeting none\r\n[INFO] Player 1 playing card BODYGUARD (no target)\r\n[SIM] Ending turn (round=3)\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=4)\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting TwigSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting TWIG_SLIME_S.name (index 3))\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=5)\r\n[SIM] Playing card StrikeNecrobinder (index 4) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[INFO] CHARACTER.NECROBINDER fought ENCOUNTER.SLIMES_WEAK for the first time and WON >:)\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.LEAF_SLIME_S for the first time and WON >:(\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.LEAF_SLIME_M for the first time and WON >:(\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.TWIG_SLIME_S for the first time and WON >:(\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[INFO] Card rarity: Rolled 0.31430602, need < -0.020000001 for rare (offset = -0.05)\r\n[INFO] Card rarity: Rolled 0.7239158, need < -0.01 for rare (offset = -0.04)\r\n[INFO] Card rarity: Rolled 0.82820684, need < 0 for rare (offset = -0.03)\r\n[INFO] Player 1 obtained 19 gold from reward\r\n[SIM] Selected card reward: Flatten\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[SIM] Moving to map coord (3,2)\r\n[SIM] Choosing option 1\r\n[SIM] Event ByrdonisNest finished, proceeding\r\n[SIM] Moving to map coord (3,3)\r\n[SIM] Choosing option 1\r\n[SIM] CleanUp exception: Method not found: 'Godot.Variant Godot.GodotObject.Call(Godot.StringName, Godot.Variant[])'.\r\n",
+      "decisions": {
+        "event_choice": 3,
+        "map_select": 3,
+        "combat_play": 21,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 3,
+        "select_map_node": 3,
+        "play_card": 16,
+        "end_turn": 5,
+        "select_card_reward": 1
+      },
+      "elapsed_seconds": 1.8280000000086147
+    },
+    {
+      "seed": "WF5GF6QHXBUP",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 13,
+      "steps": 120,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 4,
+        "map_select": 12,
+        "combat_play": 94,
+        "card_reward": 6,
+        "card_select": 3,
+        "rest_site": 1,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 5,
+        "select_map_node": 12,
+        "play_card": 70,
+        "end_turn": 23,
+        "select_card_reward": 6,
+        "select_cards": 3,
+        "use_potion": 1
+      },
+      "elapsed_seconds": 3.4069999999919673
+    },
+    {
+      "seed": "D5R6LJ3YBXP4",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "engine_error",
+      "victory": null,
+      "hp": 38,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 4,
+      "steps": 30,
+      "error": "Action 'choose_option' failed: NullReferenceException: Object reference not set to an instance of an object.",
+      "error_code": null,
+      "stderr_tail": "IM] Run launched\r\n[SIM] Starting relics finalized\r\n[WARN] Asset not cached: res://images/enchantments/missing_enchantment.png\r\n[WARN] Asset not cached: res://images/packed/energy_icons/energy_necrobinder.png\r\n[SIM] Entered Act 0\r\n[SIM] Choosing option 1\r\n[SIM] Event Neow finished, proceeding\r\n[SIM] Moving to map coord (3,1)\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 3) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Ending turn (round=1)\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card Bodyguard (index 3) targeting none\r\n[INFO] Player 1 playing card BODYGUARD (no target)\r\n[SIM] Playing card DefendNecrobinder (index 1) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=2)\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting LeafSlimeM\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card Unleash (index 0) targeting LeafSlimeM\r\n[INFO] Player 1 playing card UNLEASH (targeting LEAF_SLIME_M.name (index 3))\r\n[SIM] Playing card Bodyguard (index 2) targeting none\r\n[INFO] Player 1 playing card BODYGUARD (no target)\r\n[SIM] Ending turn (round=3)\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting TwigSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting TWIG_SLIME_S.name (index 3))\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=4)\r\n[SIM] Playing card StrikeNecrobinder (index 2) targeting TwigSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting TWIG_SLIME_S.name (index 3))\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card DefendNecrobinder (index 2) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=5)\r\n[SIM] Playing card StrikeNecrobinder (index 4) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[SIM] Playing card Slimed (index 2) targeting none\r\n[INFO] Player 1 playing card SLIMED (no target)\r\n[SIM] Playing card StrikeNecrobinder (index 3) targeting LeafSlimeS\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting LEAF_SLIME_S.name (index 2))\r\n[INFO] CHARACTER.NECROBINDER fought ENCOUNTER.SLIMES_WEAK for the first time and WON >:)\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.LEAF_SLIME_S for the first time and WON >:(\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.LEAF_SLIME_M for the first time and WON >:(\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.TWIG_SLIME_S for the first time and WON >:(\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[INFO] Card rarity: Rolled 0.31430602, need < -0.0351 for rare (offset = -0.05)\r\n[INFO] Card rarity: Rolled 0.7239158, need < -0.030100003 for rare (offset = -0.045)\r\n[INFO] Card rarity: Rolled 0.82820684, need < -0.025100004 for rare (offset = -0.040000003)\r\n[INFO] Player 1 obtained 14 gold from reward\r\n[SIM] Selected card reward: Flatten\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[SIM] Moving to map coord (3,2)\r\n[SIM] Choosing option 1\r\n[SIM] Event ByrdonisNest finished, proceeding\r\n[SIM] Moving to map coord (3,3)\r\n[SIM] Choosing option 1\r\n[SIM] CleanUp exception: Method not found: 'Godot.Variant Godot.GodotObject.Call(Godot.StringName, Godot.Variant[])'.\r\n",
+      "decisions": {
+        "event_choice": 3,
+        "map_select": 3,
+        "combat_play": 23,
+        "card_reward": 1
+      },
+      "actions": {
+        "choose_option": 3,
+        "select_map_node": 3,
+        "play_card": 18,
+        "end_turn": 5,
+        "select_card_reward": 1
+      },
+      "elapsed_seconds": 1.812000000005355
+    }
+  ]
+}

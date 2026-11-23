@@ -274,6 +274,7 @@ def run_episode(
     *,
     step_timeout: float = 20.0,
     episode_timeout: float = 300.0,
+    first_combat_only: bool = False,
     max_steps: int = 2000,
 ) -> dict:
     """Run one solo episode with a new dotnet process, then reap the process.
@@ -308,6 +309,7 @@ def run_episode(
         "floor": None, "steps": 0, "error": None, "error_code": None,
     }
     decisions, actions_taken = Counter(), Counter()
+    first_combat_started = False
     bridge = None
     with TemporaryFile() as stderr:
         try:
@@ -336,6 +338,9 @@ def run_episode(
                     break
                 if player.get("hp") == 0:
                     raise _EpisodeFailure("engine_error", "Zero HP outside game_over", "invalid_terminal")
+                if first_combat_only and first_combat_started and decision not in {"combat_play", "card_select"}:
+                    result.update(status="combat_cleared", victory=None)
+                    break
                 if result["steps"] == max_steps:
                     raise _EpisodeFailure("step_limit", "Action step limit reached", "max_steps")
                 step_deadline = min(deadline, monotonic() + step_timeout)
@@ -344,6 +349,7 @@ def run_episode(
                 if not choices:
                     raise _EpisodeFailure("unsupported_decision", f"No supported actions for {decision}", decision)
                 command = _policy_action(policy, observation, choices, step_deadline)
+                first_combat_started |= decision == "combat_play"
                 if monotonic() >= step_deadline:
                     raise _EpisodeFailure("timeout", "Step or episode deadline reached", "step_timeout")
                 result["steps"] += 1
