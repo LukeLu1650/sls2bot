@@ -1,0 +1,36 @@
+[
+  {
+    "seed": "RWN5T3VD6N2E",
+    "mode": "standard",
+    "requested_ascension": 0,
+    "ascension": 0,
+    "status": "defeat",
+    "victory": false,
+    "hp": 0,
+    "max_hp": 66,
+    "act": 1,
+    "floor": 7,
+    "steps": 106,
+    "error": null,
+    "error_code": null,
+    "decisions": {
+      "event_choice": 2,
+      "card_select": 2,
+      "map_select": 6,
+      "combat_play": 92,
+      "card_reward": 3,
+      "rest_site": 1,
+      "game_over": 1
+    },
+    "actions": {
+      "choose_option": 3,
+      "select_cards": 2,
+      "select_map_node": 6,
+      "play_card": 72,
+      "end_turn": 20,
+      "skip_card_reward": 2,
+      "select_card_reward": 1
+    },
+    "elapsed_seconds": 3.0939999999973224
+  }
+]

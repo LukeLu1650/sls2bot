@@ -1,0 +1,169 @@
+{
+  "protocol": {
+    "character": "Necrobinder",
+    "platform": "Windows",
+    "build": "v0.113.1",
+    "game_commit": "d09d48e5",
+    "host_revision": "9842f7dbb52f2b35d2bad73728f9c7ac54679ed9",
+    "game_assembly_sha256": "62ecbe91093e1fa862de4329aac865209dcb297804caf0f0520d92d8c0b4a9c3",
+    "host_manifest_sha256": "717f9805b9ae8a5404046053187f94184f5114363d4d050a62ac18ab1b2945a3",
+    "mode": "standard",
+    "ascension": 0,
+    "policy": "initial",
+    "seeds": [
+      "YESSX3NDTXXZ",
+      "JUHA4BDNP9TV",
+      "MHJA6MWFPM5D",
+      "Q484ZHBQM8VB"
+    ],
+    "max_steps": 1024,
+    "episode_timeout_seconds": 90,
+    "source_files": {
+      "beta_build.py": "5588720850b9ab9f9f923e94456164c2c8b450046d535102da32277025f99aa0",
+      "beta_eval.py": "c94920fccc6ad7bbb1d99a3a89b1e377c313b857a48071668c2b9b85062dc791",
+      "beta_env.py": "411c9dc01b267b111ebbb504586697f05359221f8bc7d5073ee0ad02f715c052",
+      "necro_policy.py": "ede86a0ba9bf19bd9bbcff4cbeea1a6c406f6c347d35a705666bd0104f57ae59"
+    },
+    "parameter_count": 18099905,
+    "initialization_seed": 711072,
+    "initialization_sha256": "db48ee066ceefce69e588fdbcdfbff280a8b2338f4481cb8bc2ff2ca6bb0ae59",
+    "numpy": "2.3.5",
+    "updates": 0,
+    "model_sha256": "db48ee066ceefce69e588fdbcdfbff280a8b2338f4481cb8bc2ff2ca6bb0ae59"
+  },
+  "status_counts": {
+    "defeat": 4
+  },
+  "finished": 4,
+  "wins": 0,
+  "attempted": 4,
+  "win_rate_all_attempts": 0.0,
+  "wilson95_all_attempts": [
+    0,
+    0.4898908364545973
+  ],
+  "acts_reached": {
+    "1": 4
+  },
+  "median_terminal_floor_within_act": 2.0,
+  "rows": [
+    {
+      "seed": "YESSX3NDTXXZ",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 11,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 9,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "end_turn": 9
+      },
+      "elapsed_seconds": 1.514999999999418,
+      "forward_calls": 11
+    },
+    {
+      "seed": "JUHA4BDNP9TV",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 10,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "bundle_select": 1,
+        "map_select": 1,
+        "combat_play": 7,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_bundle": 1,
+        "select_map_node": 1,
+        "end_turn": 7
+      },
+      "elapsed_seconds": 1.4220000000059372,
+      "forward_calls": 10
+    },
+    {
+      "seed": "MHJA6MWFPM5D",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 11,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 1,
+        "combat_play": 9,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 1,
+        "end_turn": 8,
+        "play_card": 1
+      },
+      "elapsed_seconds": 1.4689999999973224,
+      "forward_calls": 11
+    },
+    {
+      "seed": "Q484ZHBQM8VB",
+      "mode": "standard",
+      "requested_ascension": 0,
+      "ascension": 0,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 2,
+      "steps": 14,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "card_reward": 2,
+        "map_select": 1,
+        "combat_play": 10,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "skip_card_reward": 2,
+        "select_map_node": 1,
+        "end_turn": 9,
+        "play_card": 1
+      },
+      "elapsed_seconds": 1.7339999999967404,
+      "forward_calls": 14
+    }
+  ]
+}

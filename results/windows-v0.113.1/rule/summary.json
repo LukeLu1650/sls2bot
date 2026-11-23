@@ -1,0 +1,325 @@
+{
+  "protocol": {
+    "character": "Necrobinder",
+    "platform": "Windows",
+    "build": "v0.113.1",
+    "game_commit": "d09d48e5",
+    "host_revision": "9842f7dbb52f2b35d2bad73728f9c7ac54679ed9",
+    "game_assembly_sha256": "62ecbe91093e1fa862de4329aac865209dcb297804caf0f0520d92d8c0b4a9c3",
+    "host_manifest_sha256": "717f9805b9ae8a5404046053187f94184f5114363d4d050a62ac18ab1b2945a3",
+    "mode": "standard",
+    "ascension": 10,
+    "policy": "rule",
+    "seeds": [
+      "YESSX3NDTXXZ",
+      "JUHA4BDNP9TV",
+      "MHJA6MWFPM5D",
+      "Q484ZHBQM8VB",
+      "6JA7LD1U23BD",
+      "8668D8L9UBCT",
+      "FLJDKK3DH2A4",
+      "BBLKA3Z0NHN3"
+    ],
+    "max_steps": 1024,
+    "episode_timeout_seconds": 90,
+    "source_files": {
+      "beta_build.py": "5588720850b9ab9f9f923e94456164c2c8b450046d535102da32277025f99aa0",
+      "beta_eval.py": "c94920fccc6ad7bbb1d99a3a89b1e377c313b857a48071668c2b9b85062dc791",
+      "beta_env.py": "411c9dc01b267b111ebbb504586697f05359221f8bc7d5073ee0ad02f715c052",
+      "necro_policy.py": "ede86a0ba9bf19bd9bbcff4cbeea1a6c406f6c347d35a705666bd0104f57ae59"
+    }
+  },
+  "status_counts": {
+    "defeat": 7,
+    "engine_error": 1
+  },
+  "finished": 7,
+  "wins": 0,
+  "attempted": 8,
+  "win_rate_all_attempts": 0.0,
+  "wilson95_all_attempts": [
+    0,
+    0.32440756488388023
+  ],
+  "acts_reached": {
+    "1": 7
+  },
+  "median_terminal_floor_within_act": 7,
+  "rows": [
+    {
+      "seed": "YESSX3NDTXXZ",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 63,
+      "act": 1,
+      "floor": 7,
+      "steps": 69,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 5,
+        "card_reward": 3,
+        "map_select": 6,
+        "combat_play": 54,
+        "card_select": 1,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 5,
+        "skip_card_reward": 1,
+        "select_map_node": 6,
+        "play_card": 40,
+        "end_turn": 14,
+        "select_card_reward": 2,
+        "select_cards": 1
+      },
+      "elapsed_seconds": 1.5779999999940628
+    },
+    {
+      "seed": "JUHA4BDNP9TV",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 54,
+      "act": 1,
+      "floor": 7,
+      "steps": 68,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 2,
+        "map_select": 6,
+        "combat_play": 54,
+        "card_reward": 2,
+        "card_select": 1,
+        "shop": 2,
+        "rest_site": 1,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 3,
+        "select_map_node": 6,
+        "play_card": 42,
+        "end_turn": 12,
+        "select_card_reward": 2,
+        "select_cards": 1,
+        "buy_card": 1,
+        "leave_room": 1
+      },
+      "elapsed_seconds": 1.7030000000086147
+    },
+    {
+      "seed": "MHJA6MWFPM5D",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 7,
+      "steps": 108,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 1,
+        "map_select": 6,
+        "combat_play": 95,
+        "card_reward": 3,
+        "shop": 3,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 1,
+        "select_map_node": 6,
+        "play_card": 73,
+        "end_turn": 22,
+        "skip_card_reward": 2,
+        "select_card_reward": 1,
+        "buy_card": 2,
+        "leave_room": 1
+      },
+      "elapsed_seconds": 1.5
+    },
+    {
+      "seed": "Q484ZHBQM8VB",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 73,
+      "act": 1,
+      "floor": 8,
+      "steps": 81,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 2,
+        "card_select": 4,
+        "map_select": 7,
+        "combat_play": 62,
+        "card_reward": 4,
+        "shop": 2,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 2,
+        "select_cards": 4,
+        "select_map_node": 7,
+        "play_card": 46,
+        "end_turn": 16,
+        "select_card_reward": 4,
+        "buy_potion": 1,
+        "leave_room": 1
+      },
+      "elapsed_seconds": 1.639999999999418
+    },
+    {
+      "seed": "6JA7LD1U23BD",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 51,
+      "act": 1,
+      "floor": 8,
+      "steps": 118,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 3,
+        "map_select": 7,
+        "combat_play": 102,
+        "card_reward": 4,
+        "rest_site": 1,
+        "card_select": 1,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 4,
+        "select_map_node": 7,
+        "play_card": 78,
+        "end_turn": 24,
+        "skip_card_reward": 2,
+        "select_card_reward": 2,
+        "select_cards": 1
+      },
+      "elapsed_seconds": 1.9220000000059372
+    },
+    {
+      "seed": "8668D8L9UBCT",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "engine_error",
+      "victory": null,
+      "hp": 44,
+      "max_hp": 66,
+      "act": 1,
+      "floor": 3,
+      "steps": 28,
+      "error": "Action 'choose_option' failed: NullReferenceException: Object reference not set to an instance of an object.",
+      "error_code": null,
+      "stderr_tail": "FO] File `release_info.json` not found in any of the expected locations.\r\n[SIM] Rooms generated\r\n[SIM] Run launched\r\n[SIM] Starting relics finalized\r\n[WARN] Asset not cached: res://images/enchantments/missing_enchantment.png\r\n[WARN] Asset not cached: res://images/packed/energy_icons/energy_necrobinder.png\r\n[SIM] Entered Act 0\r\n[SIM] Choosing option 1\r\n[INFO] Player 1 selected card reward\r\n[SIM] Card reward pending: 3 cards (blocking)\r\n[SIM] Skipping event card reward\r\n[INFO] Player 1 selected card reward\r\n[SIM] Card reward pending: 3 cards (blocking)\r\n[SIM] Skipping event card reward\r\n[SIM] Event Neow finished, proceeding\r\n[SIM] Moving to map coord (3,1)\r\n[SIM] Playing card Unleash (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card UNLEASH (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Playing card DefendNecrobinder (index 0) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Ending turn (round=1)\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Playing card DefendNecrobinder (index 0) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Ending turn (round=2)\r\n[SIM] Playing card Bodyguard (index 1) targeting none\r\n[INFO] Player 1 playing card BODYGUARD (no target)\r\n[SIM] Playing card DefendNecrobinder (index 1) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card StrikeNecrobinder (index 1) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Ending turn (round=3)\r\n[SIM] Playing card DefendNecrobinder (index 0) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card Unleash (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card UNLEASH (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Ending turn (round=4)\r\n[SIM] Playing card DefendNecrobinder (index 0) targeting none\r\n[INFO] Player 1 playing card DEFEND_NECROBINDER (no target)\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[SIM] Ending turn (round=5)\r\n[SIM] Playing card StrikeNecrobinder (index 0) targeting FuzzyWurmCrawler\r\n[INFO] Player 1 playing card STRIKE_NECROBINDER (targeting FUZZY_WURM_CRAWLER.name (index 2))\r\n[INFO] CHARACTER.NECROBINDER fought ENCOUNTER.FUZZY_WURM_CRAWLER_WEAK for the first time and WON >:)\r\n[INFO] CHARACTER.NECROBINDER fought MONSTER.FUZZY_WURM_CRAWLER for the first time and WON >:(\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[INFO] Card rarity: Rolled 0.20382637, need < -0.0351 for rare (offset = -0.05)\r\n[INFO] Card rarity: Rolled 0.82588655, need < -0.030100003 for rare (offset = -0.045)\r\n[INFO] Card rarity: Rolled 0.026806215, need < -0.025100004 for rare (offset = -0.040000003)\r\n[INFO] Player 1 obtained 14 gold from reward\r\n[INFO] Player 1 obtained POTION.POWDERED_DEMISE from potion reward\r\n[SIM] Selected card reward: HighFive\r\n[SIM] Post-combat: RoomType=Monster, IsPreFinished=True\r\n[SIM] Moving to map coord (3,2)\r\n[SIM] Choosing option 1\r\n[SIM] CleanUp exception: Method not found: 'Godot.Variant Godot.GodotObject.Call(Godot.StringName, Godot.Variant[])'.\r\n",
+      "decisions": {
+        "event_choice": 2,
+        "card_reward": 3,
+        "map_select": 2,
+        "combat_play": 21
+      },
+      "actions": {
+        "choose_option": 2,
+        "skip_card_reward": 2,
+        "select_map_node": 2,
+        "play_card": 16,
+        "end_turn": 5,
+        "select_card_reward": 1
+      },
+      "elapsed_seconds": 1.7189999999973224
+    },
+    {
+      "seed": "FLJDKK3DH2A4",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 73,
+      "act": 1,
+      "floor": 9,
+      "steps": 98,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 3,
+        "card_select": 1,
+        "map_select": 8,
+        "combat_play": 79,
+        "card_reward": 4,
+        "shop": 3,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 3,
+        "select_cards": 1,
+        "select_map_node": 8,
+        "play_card": 63,
+        "end_turn": 16,
+        "select_card_reward": 2,
+        "buy_card": 2,
+        "leave_room": 1,
+        "skip_card_reward": 2
+      },
+      "elapsed_seconds": 1.562000000005355
+    },
+    {
+      "seed": "BBLKA3Z0NHN3",
+      "mode": "standard",
+      "requested_ascension": 10,
+      "ascension": 10,
+      "status": "defeat",
+      "victory": false,
+      "hp": 0,
+      "max_hp": 63,
+      "act": 1,
+      "floor": 7,
+      "steps": 99,
+      "error": null,
+      "error_code": null,
+      "decisions": {
+        "event_choice": 3,
+        "card_select": 1,
+        "map_select": 6,
+        "combat_play": 84,
+        "card_reward": 3,
+        "shop": 2,
+        "game_over": 1
+      },
+      "actions": {
+        "choose_option": 3,
+        "select_cards": 1,
+        "select_map_node": 6,
+        "play_card": 64,
+        "end_turn": 20,
+        "skip_card_reward": 1,
+        "select_card_reward": 2,
+        "buy_potion": 1,
+        "leave_room": 1
+      },
+      "elapsed_seconds": 1.4069999999919673
+    }
+  ]
+}
