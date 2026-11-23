@@ -77,3 +77,22 @@ $long = @('--out','runs/strategy-a10-long-v2','--ascension','10','--games','64',
 - `act_clear_rate` 以全部尝试为分母。进入下一幕即通过前一幕，第三幕以整局通关为准。`win_rate` 和 Wilson 95% 区间同样按全部尝试计算。宿主异常、步数上限和真实死亡有独立计数。
 - `boss_hp` 分幕和第几个 Boss 汇总。能从地图观察到进入前血量时写入 `median_before_travel_hp`。另外保留每场首次可操作战斗状态的血量及比例，覆盖自动转场。未遇到 Boss 的局不会混入血量中位数，报告里保留对应样本数。
 - `offered` 和 `selected` 用来检查训练是否真正覆盖加牌、跳牌、删牌、事件、商店与火堆。若某类操作几乎未出现，相应结论应等待更有覆盖的训练局和评测局。
+
+## 自查 engine_error
+
+已保存的轮次可以随时扫描。默认只读报告。加 `--replay 1` 时另开一局，定位最后的请求、事件、选项和异常栈。重复出现的相同种子、错误、楼层和步数合并显示，三组撞到同一个分支会标为 3 次记录、1 个案例。
+
+```powershell
+& $py scripts/diagnose_strategy.py scan runs/strategy-a0-v2
+& $py scripts/diagnose_strategy.py scan runs/strategy-a0-v2 --replay 1
+```
+
+普通训练报告只保留异常消息和部分宿主日志，第一轮零初始化训练或与现有检查点一致的评测可以重建决策。历史中间轮次缺少对应的权重时，程序会说明无法重建。下次手动续训时，可以把原来的训练命令改成下面的带记录版本，沿用原来的参数和检查点。
+
+```powershell
+& $py scripts/diagnose_strategy.py record @a0 --rounds 4 --resume
+```
+
+带记录版本在每次失败后立即将原始宿主请求序列、最后局面、选项和服务器异常写入输出目录的 `diagnostics/`，本轮尚未评测完也可以查看。用 `scan --replay 1` 可复送原命令序列，不依赖旧模型权重。程序保留宿主指纹，便于判断复跑是否使用了同一个构建。
+
+已确认第一轮种子 `295VDSZSDA3P` 的三次错误来自同一案例。第一幕第 8 层 **Jungle Maze Adventure → Join Forces** 在 `JungleMazeAdventure.SafetyInNumbers()` 抛出空引用。该方法在发放金币前访问 `NDebugAudioManager` 播放音效并等待演出，属于无画面宿主的兼容缺口。当前运行的宿主和检查点按原协议保留。修复时应保留金币、事件结束和后续地图状态，再用记录的动作序列复测。
