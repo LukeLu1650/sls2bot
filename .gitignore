@@ -1,0 +1,5 @@
+/external/
+/artifacts/
+/runs/
+/.venv/
+__pycache__/
