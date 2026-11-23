@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Audio.Debug;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models.Events;
@@ -11,15 +12,49 @@ namespace Sts2Headless;
 /// <summary>Compatibility patch for the assembly pinned by beta_build.py.</summary>
 internal static class HeadlessEventPresentation
 {
+    private static NDebugAudioManager _silentAudio = null!;
+    private static int _soundId;
+
     internal static void Install()
     {
+        var harmony = new Harmony("local.necrobinder.headless.events");
+        InstallDebugAudio(harmony);
         var rest = AccessTools.Method(typeof(DenseVegetation), "Rest");
         var asyncType = rest.GetCustomAttribute<AsyncStateMachineAttribute>()?.StateMachineType
             ?? throw new InvalidDataException("Dense Vegetation Rest state machine was not found.");
         var moveNext = AccessTools.Method(asyncType, "MoveNext");
-        new Harmony("local.necrobinder.headless.events").Patch(moveNext,
+        harmony.Patch(moveNext,
             transpiler: new HarmonyMethod(typeof(HeadlessEventPresentation), nameof(SkipRestPresentation)));
     }
+
+    private static void InstallDebugAudio(Harmony harmony)
+    {
+        var audio = typeof(NDebugAudioManager);
+        // This process never has a Godot audio tree. The prefixes replace all the
+        // callable playback/volume operations, so the sentinel never uses Node internals.
+        _silentAudio = (NDebugAudioManager)RuntimeHelpers.GetUninitializedObject(audio);
+        harmony.Patch(AccessTools.PropertyGetter(audio, nameof(NDebugAudioManager.Instance)),
+            prefix: new HarmonyMethod(typeof(HeadlessEventPresentation), nameof(SilentAudio)));
+        harmony.Patch(AccessTools.Method(audio, nameof(NDebugAudioManager.Play)),
+            prefix: new HarmonyMethod(typeof(HeadlessEventPresentation), nameof(SilentPlay)));
+        foreach (string method in new[] { "Stop", "StopAll", "SetMasterAudioVolume", "SetSfxAudioVolume" })
+            harmony.Patch(AccessTools.Method(audio, method),
+                prefix: new HarmonyMethod(typeof(HeadlessEventPresentation), nameof(SkipAudioOperation)));
+    }
+
+    private static bool SilentAudio(ref NDebugAudioManager __result)
+    {
+        __result = _silentAudio;
+        return false;
+    }
+
+    private static bool SilentPlay(ref int __result)
+    {
+        __result = Interlocked.Increment(ref _soundId);
+        return false;
+    }
+
+    private static bool SkipAudioOperation() => false;
 
     private static IEnumerable<CodeInstruction> SkipRestPresentation(IEnumerable<CodeInstruction> input)
     {

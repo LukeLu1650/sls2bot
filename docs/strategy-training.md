@@ -32,7 +32,7 @@
 
 ## 在你的 Windows 自主启动
 
-在当前仓库根目录打开 PowerShell。以下使用已有的 Python 与 NumPy，CPU 即可。本机已重建匹配的游戏宿主。如在其他检出目录操作，先用同一个 Python 运行 `scripts/beta_build.py` 从本地 Steam v0.113.1 安装准备宿主。新版地图与牌组特征采用协议 2，旧检查点继续保留用于旧实验。请用下文的 `-v2` 新目录。
+在当前仓库根目录打开 PowerShell。以下使用已有的 Python 与 NumPy，CPU 即可。本机已重建匹配的游戏宿主。如在其他检出目录操作，先用同一个 Python 运行 `scripts/beta_build.py` 从本地 Steam v0.113.1 安装准备宿主。地图与牌组特征采用协议 2。音效和商店修复改变了宿主指纹，旧结果与检查点保留在 `strategy-a0-v2`，使用下文的 `-v3` 新目录运行同配置对照。
 
 ```powershell
 $py = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
@@ -42,7 +42,7 @@ $py = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies
 & $py scripts/train_strategy.py --out runs/strategy-small --rounds 1 --games 1 --eval-games 1 --max-steps 180 --episode-timeout 25
 
 # A0 初筛
-$a0 = @('--out','runs/strategy-a0-v2','--ascension','0','--games','8','--eval-games','8','--eval-every','2')
+$a0 = @('--out','runs/strategy-a0-v3','--ascension','0','--games','8','--eval-games','8','--eval-every','2')
 & $py scripts/train_strategy.py @a0 --rounds 4
 
 # 从上次完整保存的轮次继续，到总共 12 轮
@@ -55,7 +55,7 @@ $a0 = @('--out','runs/strategy-a0-v2','--ascension','0','--games','8','--eval-ga
 
 ```powershell
 $a5 = @('--out','runs/strategy-a5','--ascension','5','--games','16','--eval-games','16','--eval-every','4','--seed-key','necro-a5')
-& $py scripts/train_strategy.py @a5 --rounds 16 --start-from runs/strategy-a0-v2/checkpoint.json
+& $py scripts/train_strategy.py @a5 --rounds 16 --start-from runs/strategy-a0-v3/checkpoint.json
 $a10 = @('--out','runs/strategy-a10','--ascension','10','--games','32','--eval-games','32','--eval-every','4','--seed-key','necro-a10')
 & $py scripts/train_strategy.py @a10 --rounds 24 --start-from runs/strategy-a5/checkpoint.json
 & $py scripts/train_strategy.py @a10 --final --final-games 128
@@ -78,6 +78,12 @@ $long = @('--out','runs/strategy-a10-long-v2','--ascension','10','--games','64',
 - `boss_hp` 分幕和第几个 Boss 汇总。能从地图观察到进入前血量时写入 `median_before_travel_hp`。另外保留每场首次可操作战斗状态的血量及比例，覆盖自动转场。未遇到 Boss 的局不会混入血量中位数，报告里保留对应样本数。
 - `offered` 和 `selected` 用来检查训练是否真正覆盖加牌、跳牌、删牌、事件、商店与火堆。若某类操作几乎未出现，相应结论应等待更有覆盖的训练局和评测局。
 
+## 已完成的标准 A0 四轮初筛
+
+原宿主的 `runs/strategy-a0-v2` 共完成 4 轮，轮次耗时合计约 7 分 10 秒。三组各尝试 32 局训练，其中各有 30 局正常死亡、2 局宿主错误。每组各采样到 443 次多候选战略决策（含出错局的前缀），各完成 4 次有参数变化的更新。训练和评测合计 152 次尝试，记录为 146 次正常死亡、6 次宿主错误。
+
+固定的 8 个开发种子上，第 2、4 轮的三组模型与冻结对照都得到相同的逐种子终局报告。楼层中位数 7.5，最高 14，第一幕通过数 0，Boss 样本数 0。选牌、跳牌、删牌、休息点和商店已有样本，但当前采样范围内没有观察到战略特征改善。继续评估时需要先取得更多抵达第一幕 Boss 的局，再比较路线和构筑。
+
 ## 自查 engine_error
 
 已保存的轮次可以随时扫描。默认只读报告。加 `--replay 1` 时另开一局，定位最后的请求、事件、选项和异常栈。重复出现的相同种子、错误、楼层和步数合并显示，三组撞到同一个分支会标为 3 次记录、1 个案例。
@@ -95,4 +101,6 @@ $long = @('--out','runs/strategy-a10-long-v2','--ascension','10','--games','64',
 
 带记录版本在每次失败后立即将原始宿主请求序列、最后局面、选项和服务器异常写入输出目录的 `diagnostics/`，本轮尚未评测完也可以查看。用 `scan --replay 1` 可复送原命令序列，不依赖旧模型权重。程序保留宿主指纹，便于判断复跑是否使用了同一个构建。
 
-已确认第一轮种子 `295VDSZSDA3P` 的三次错误来自同一案例。第一幕第 8 层 **Jungle Maze Adventure → Join Forces** 在 `JungleMazeAdventure.SafetyInNumbers()` 抛出空引用。该方法在发放金币前访问 `NDebugAudioManager` 播放音效并等待演出，属于无画面宿主的兼容缺口。当前运行的宿主和检查点按原协议保留。修复时应保留金币、事件结束和后续地图状态，再用记录的动作序列复测。
+第一轮种子 `295VDSZSDA3P` 的三次错误来自 **Jungle Maze Adventure → Join Forces**。该方法在发放金币前访问 `NDebugAudioManager`。新版宿主在该类入口统一提供静音对象以及播放、停止和音量操作的兼容实现。原动作序列复测通过，金币由 176 增至 235，事件正常返回地图。此前的 Dense Vegetation 两个治疗及战斗回归也通过。直接调用画面和场景对象的代码仍需各自验证。
+
+第四轮种子 `GBZGJLVUVJFY` 的三次错误来自同一次商店购买。旧代码在购买后读取可能已经被清空的库存对象来写日志。新版先记录遗物和价格，再用已有的商店任务等待流程完成购买和可能出现的选牌。原动作序列复测成功购买 **Bread**，从 191 金币扣除 182，剩余 9 金币且遗物已入栏。[无画面音效适配](../patches/HeadlessEventPresentation.cs) · [宿主构建](../scripts/beta_build.py)

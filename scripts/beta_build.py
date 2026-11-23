@@ -43,6 +43,28 @@ def verify_host():
     return manifest
 
 
+def patch_relic_purchase(source, eol):
+    start = source.index(eol + b"        try", source.index(b"private Dictionary<string, object?> DoBuyRelic("))
+    end = source.index(eol + b"    }" + eol + eol + b"    private Dictionary<string, object?> DoBuyPotion(", start)
+    return source[:start] + eol.join([
+        b"",
+        b"        if (_pendingShopPurchaseTask != null)",
+        b"            return DetectDecisionPoint();",
+        b"",
+        b"        var relicId = entry.Model?.Id.Entry ?? \"?\";",
+        b"        Log($\"Purchasing relic {relicId} for {entry.Cost}g\");",
+        b"        _pendingShopPurchaseTask = Task.Run(() => RunManager.Instance.MerchantSynchronizer!.PurchaseLocalEntry(entry));",
+        b"        return DetectDecisionPoint();",
+    ]) + source[end:]
+
+
+def patch_audio_api(source, marker, declarations):
+    if source.count(marker) != 1:
+        raise ValueError(f"Pinned Godot shim signature changed: {marker!r}")
+    eol = b"\r\n" if b"\r\n" in source else b"\n"
+    return source.replace(marker, eol.join([marker, *declarations]))
+
+
 def prepare(game):
     info = json.loads((game / "release_info.json").read_text(encoding="utf-8-sig"))
     data = game / "data_sts2_windows_x86_64"
@@ -69,6 +91,29 @@ def prepare(game):
     event_patch = ROOT / "patches/HeadlessEventPresentation.cs"
     staged_patch = simulator.with_name(event_patch.name)
     original = simulator.read_bytes()
+    stubs = CHECKOUT / "src/GodotStubs"
+    ui, core, math = stubs / "UI.cs", stubs / "Core.cs", stubs / "Math.cs"
+    original_ui, original_core, original_math = ui.read_bytes(), core.read_bytes(), math.read_bytes()
+    patched_ui = patch_audio_api(original_ui, b"    public float VolumeDb { get; set; }", [
+        b"    public float VolumeLinear { get; set; }",
+        b"    public float PitchScale { get; set; }",
+        b"    public StringName Bus { get; set; } = \"Master\";",
+    ])
+    patched_core = patch_audio_api(original_core, b"    public virtual bool IsQueuedForDeletion() => false;", [
+        b"    public Error Connect(StringName signal, Callable callable, uint flags = 0) => Error.Ok;",
+        b"    public void Disconnect(StringName signal, Callable callable) { }",
+    ])
+    patched_ui = patch_audio_api(patched_ui, b"public class AudioStream : Resource { }", [
+        b"public static class AudioServer { public static AudioServerInstance? Singleton => null; }",
+        b"public class AudioServerInstance : GodotObject",
+        b"{",
+        b"    public int GetBusIndex(StringName bus) => -1;",
+        b"    public void SetBusVolumeDb(int index, float volumeDb) { }",
+        b"}",
+    ])
+    patched_math = patch_audio_api(original_math, b"    public const float Pi = MathF.PI;", [
+        b"    public static float LinearToDb(float linear) => 20f * MathF.Log10(linear);",
+    ])
     marker = b'["deck_size"] = '
     setup_marker = b"        PatchAudioManager();"
     if original.count(marker) != 1 or original.count(setup_marker) != 1:
@@ -83,11 +128,18 @@ def prepare(game):
         shutil.copyfile(event_patch, staged_patch)
         patched = original.replace(marker, eol.join(fields))
         patched = patched.replace(setup_marker, eol.join([setup_marker, b"        HeadlessEventPresentation.Install();"]))
+        patched = patch_relic_purchase(patched, eol)
         simulator.write_bytes(patched)
+        ui.write_bytes(patched_ui)
+        core.write_bytes(patched_core)
+        math.write_bytes(patched_math)
         subprocess.run(["dotnet", "build", "src/Sts2Headless/Sts2Headless.csproj", "-c", "Debug",
                         "--disable-build-servers", "--nologo", "-v:q"], cwd=CHECKOUT, check=True)
     finally:
         simulator.write_bytes(original)
+        ui.write_bytes(original_ui)
+        core.write_bytes(original_core)
+        math.write_bytes(original_math)
         staged_patch.unlink(missing_ok=True)
     files.extend([HOST, HOST.with_name("GodotSharp.dll")])
     for language in ("eng", "zhs"):
