@@ -6,6 +6,7 @@
 | --- | --- |
 | [Windows 骨头人基线](docs/windows-baseline.md) | 本机构建、复测命令、实测结果、模型与宿主的适用范围 |
 | [当前模型与可选动作](docs/current-policy.md) | 标准模式的动作、观测，以及继续训练后的首战结果 |
+| [自主训练路线与构筑](docs/strategy-training.md) | 三组对照、每阶段轮数、PowerShell 启动与续训 |
 | [实机接管 Mod](docs/live-pilot.md) | 用 F7 随时接管当前标准骨头人对局，并查看模型打分 |
 | [骨头人训练设计](docs/necrobinder.md) | 玩家可见特征、角色机制、PPO 课程和实机验收 |
 | [游戏版本迁移](docs/versions-and-modes.md) | 标准模式的新构建验证和历史模式资料 |

@@ -281,6 +281,7 @@ def run_episode(
     episode_timeout: float = 300.0,
     first_combat_only: bool = False,
     max_steps: int = 2000,
+    strategic_observations: bool = False,
 ) -> dict:
     """Run one solo episode with a new dotnet process, then reap the process.
 
@@ -315,6 +316,11 @@ def run_episode(
     }
     decisions, actions_taken = Counter(), Counter()
     first_combat_started = False
+    current_map = None
+    map_act = None
+    boss_rooms = set()
+    boss_entries = []
+    boss_approach = None
     bridge = None
     with TemporaryFile() as stderr:
         try:
@@ -331,6 +337,15 @@ def run_episode(
                 result.update(_pick_fields(context, ("act", "floor", "ascension")))
                 result.update(_pick_fields(state, ("act", "floor")))
                 result.update(_pick_fields(player, ("hp", "max_hp")))
+                if strategic_observations and decision == "combat_play" and context.get("room_type") == "Boss":
+                    room = (result["act"], result["floor"])
+                    if room not in boss_rooms:
+                        approach = boss_approach if boss_approach and boss_approach["act"] == room[0] else None
+                        boss_entries.append({"act": room[0], "floor": room[1], "hp": result["hp"],
+                                             "max_hp": result["max_hp"], "before_travel": approach,
+                                             "boss": context.get("boss")})
+                        boss_rooms.add(room)
+                        boss_approach = None
                 if decision == "game_over":
                     victory = state.get("victory")
                     hp = player.get("hp")
@@ -350,10 +365,22 @@ def run_episode(
                     raise _EpisodeFailure("step_limit", "Action step limit reached", "max_steps")
                 step_deadline = min(deadline, monotonic() + step_timeout)
                 observation = public_observation(state)
+                if strategic_observations and decision != "combat_play":
+                    if result["act"] != map_act or decision == "map_select":
+                        board = _expect(bridge.exchange({"cmd": "get_map"}, step_deadline), "map")
+                        current_map = _pick_fields(board, ("rows", "current_coord"))
+                        map_act = result["act"]
+                    observation["visible_map"] = current_map
                 choices = legal_actions(observation)
                 if not choices:
                     raise _EpisodeFailure("unsupported_decision", f"No supported actions for {decision}", decision)
                 command = _policy_action(policy, observation, choices, step_deadline)
+                if strategic_observations and command["action"] == "select_map_node":
+                    selected = command["args"]
+                    at_boss = any(str(node.get("type")).lower() == "boss" and
+                                  all(node.get(key) == selected[key] for key in ("row", "col"))
+                                  for node in observation.get("choices", []))
+                    boss_approach = (_pick_fields(result, ("act", "hp", "max_hp")) if at_boss else None)
                 first_combat_started |= decision == "combat_play"
                 if monotonic() >= step_deadline:
                     raise _EpisodeFailure("timeout", "Step or episode deadline reached", "step_timeout")
@@ -373,4 +400,6 @@ def run_episode(
             stderr.seek(max(0, stderr.seek(0, 2) - 4096))
             result["stderr_tail"] = stderr.read().decode("utf-8", errors="replace")
     result.update(decisions=dict(decisions), actions=dict(actions_taken), elapsed_seconds=monotonic() - start)
+    if strategic_observations:
+        result["boss_entries"] = boss_entries
     return result
