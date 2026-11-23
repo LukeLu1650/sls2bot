@@ -18,6 +18,9 @@ from train_standard import StandardPolicy, np
 BASE = ROOT / "results/windows-v0.113.1/standard-continuation"
 ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SCHEMA = 2
+# Earlier schema-2 trainer used the same features and update but always ran all cohorts.
+PRE_VARIANT_TRAINER = "e79cb0acf212f08843e9e8857aff9018c39de9c0e9a4a061cf522f65069cba5e"
+STRATEGY_FILES = ("train_strategy.py", "strategic_features.py", "beta_env.py", "train_standard.py", "necro_policy.py")
 
 
 def panel(domain, number, unique_key):
@@ -140,14 +143,27 @@ def positive_int(value):
     return result
 
 
-def fingerprint(args):
-    files = ("train_strategy.py", "strategic_features.py", "beta_env.py", "train_standard.py", "necro_policy.py")
+def strategy_sources():
+    return {name: sha(Path(__file__).with_name(name)) for name in STRATEGY_FILES}
+
+
+def normalize_protocol(protocol):
+    compatible = dict(protocol)
+    compatible.setdefault("variants", list(VARIANTS))
+    sources = compatible["sources"]
+    if compatible["schema"] == SCHEMA and sources.get("train_strategy.py") == PRE_VARIANT_TRAINER:
+        compatible["sources"] = {**sources, "train_strategy.py": sha(Path(__file__))}
+    return compatible
+
+
+def fingerprint(args, variants):
     return {"schema": SCHEMA, "game": BUILD, "host": sha(MANIFEST), "mode": "standard",
+            "variants": list(variants),
             "seed_key": args.seed_key, "ascension": args.ascension, "games_per_round": args.games,
             "development_games": args.eval_games, "evaluate_every": args.eval_every,
             "max_steps": args.max_steps, "episode_timeout": args.episode_timeout,
             "base_weights": sha(BASE / "readout.npz"),
-            "sources": {name: sha(Path(__file__).with_name(name)) for name in files}}
+            "sources": strategy_sources()}
 
 
 def checkpoint(path, header, rounds, weights):
@@ -167,6 +183,8 @@ def main():
     parser.add_argument("--episode-timeout", type=positive_int, default=65)
     parser.add_argument("--ascension", type=int, choices=range(11), default=0)
     parser.add_argument("--seed-key", default="necro-standard")
+    parser.add_argument("--variant", choices=("all", *VARIANTS),
+                        help="Train one policy or all three. Resume defaults to the checkpoint's selection.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--final", action="store_true", help="Evaluate saved checkpoints once without updating weights")
     parser.add_argument("--test-ascension", type=int, choices=range(11), help="Final evaluation difficulty")
@@ -180,26 +198,35 @@ def main():
     if host.get("event_patch_sha256") != sha(ROOT / "patches/HeadlessEventPresentation.cs"):
         parser.error("Rebuild the Windows headless host with scripts/beta_build.py before training")
     os.environ["STS2_LIB"] = str(CHECKOUT / "lib")
-    header = fingerprint(args)
     state_file = args.out / "checkpoint.json"
+    old = json.loads(state_file.read_bytes()) if args.resume or args.final else None
+    previous_protocol = normalize_protocol(old["protocol"]) if old else None
+    if args.variant is None and previous_protocol:
+        variants = tuple(previous_protocol["variants"])
+    else:
+        variants = VARIANTS if args.variant in (None, "all") else (args.variant,)
+    header = fingerprint(args, variants)
     previous = 0
-    weights = {name: np.zeros(FEATURE_COUNT, dtype=np.float32) for name in VARIANTS}
-    if args.resume or args.final:
-        old = json.loads(state_file.read_bytes())
-        if "start_from" in old["protocol"]:
-            header["start_from"] = old["protocol"]["start_from"]
-        if old["protocol"] != header:
+    weights = {name: np.zeros(FEATURE_COUNT, dtype=np.float32) for name in variants}
+    if old is not None:
+        if "start_from" in previous_protocol:
+            header["start_from"] = previous_protocol["start_from"]
+        if previous_protocol != header:
             raise ValueError("Checkpoint protocol differs. Reuse the original run arguments and source revision.")
         previous = old["round"]
-        weights = {name: np.asarray(old["weights"][name], dtype=np.float32) for name in VARIANTS}
+        weights = {name: np.asarray(old["weights"][name], dtype=np.float32) for name in variants}
     else:
         if args.start_from:
             earlier = json.loads(args.start_from.read_bytes())
+            earlier_protocol = normalize_protocol(earlier["protocol"])
             for key in ("schema", "host", "mode", "base_weights", "sources"):
-                if earlier["protocol"][key] != header[key]:
+                if earlier_protocol[key] != header[key]:
                     raise ValueError(f"Previous curriculum stage has an incompatible {key}")
+            unavailable = set(variants) - earlier["weights"].keys()
+            if unavailable:
+                raise ValueError(f"Previous checkpoint lacks {', '.join(sorted(unavailable))}. Select an included variant.")
             header["start_from"] = sha(args.start_from)
-            weights = {name: np.asarray(earlier["weights"][name], dtype=np.float32) for name in VARIANTS}
+            weights = {name: np.asarray(earlier["weights"][name], dtype=np.float32) for name in variants}
         args.out.mkdir(parents=True, exist_ok=False)
         checkpoint(state_file, header, 0, weights)
     base = load_base()
@@ -215,7 +242,7 @@ def main():
             parser.error("Final panel already evaluated")
         report = {"round": previous, "panel": fixed_eval, "protocol": header,
                   "test_ascension": args.ascension, "cohorts": {}}
-        for name in ("anchor", *VARIANTS):
+        for name in ("anchor", *variants):
             rows, _ = play(base, name, weights.get(name), fixed_eval, args)
             report["cohorts"][name] = {"summary": summarize(rows), "rows": rows}
         write_json(destination, report)

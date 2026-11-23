@@ -8,8 +8,8 @@ from pathlib import Path
 from beta_build import CHECKOUT, HOST, MANIFEST, sha, verify_host
 from beta_env import run_episode
 from beta_eval import write_json
-from strategic_features import VARIANTS, features
-from train_strategy import RunPolicy, load_base, np
+from strategic_features import features
+from train_strategy import RunPolicy, load_base, normalize_protocol, np
 
 
 class CachedBase:
@@ -57,17 +57,18 @@ def compare(folder, limit, output):
     os.environ["STS2_LIB"] = str(CHECKOUT / "lib")
     checkpoint = json.loads((folder / "checkpoint.json").read_bytes())
     anchor = json.loads((folder / "anchor.json").read_bytes())
-    protocol = checkpoint["protocol"]
+    protocol = normalize_protocol(checkpoint["protocol"])
     for name, digest in protocol["sources"].items():
         if sha(Path(__file__).with_name(name)) != digest:
             raise ValueError(f"Checkpoint feature code differs: {name}")
     same_host = protocol["host"] == sha(MANIFEST)
     model = load_base()
-    weights = {name: np.asarray(checkpoint["weights"][name], dtype=np.float32) for name in VARIANTS}
+    variants = tuple(protocol["variants"])
+    weights = {name: np.asarray(checkpoint["weights"][name], dtype=np.float32) for name in variants}
     sampled = anchor["rows"][:limit]
     by_seed = []
-    gaps, ranges = [], {name: [] for name in VARIANTS}
-    changes = {name: Counter() for name in VARIANTS}
+    gaps, ranges = [], {name: [] for name in variants}
+    changes = {name: Counter() for name in variants}
     scenes = Counter()
     for row in sampled:
         base = CachedBase(model)
@@ -116,7 +117,7 @@ def compare(folder, limit, output):
         "cohorts": {name: {"choice_changes": sum(changes[name].values()),
                             "changes_by_scene": dict(changes[name]),
                             "starting_from_anchor_adjustment_range": percentiles(ranges[name])}
-                    for name in VARIANTS},
+                    for name in variants},
         "seeds": by_seed,
     }
     print(json.dumps({key: value for key, value in report.items() if key != "seeds"}, indent=2), flush=True)

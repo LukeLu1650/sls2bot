@@ -115,7 +115,7 @@ def describe(trace):
 
 def replay_legacy(item, checkpoint):
     """Reconstruct early train trajectories, and evaluations with a saved matching model."""
-    protocol = checkpoint["protocol"]
+    protocol = strategy.normalize_protocol(checkpoint["protocol"])
     for name, digest in protocol["sources"].items():
         if sha(STRATEGY_SCRIPT.with_name(name)) != digest:
             return {"unavailable": f"Saved source fingerprint differs: {name}"}
