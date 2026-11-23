@@ -9,7 +9,7 @@ from beta_build import CHECKOUT, HOST, MANIFEST, sha, verify_host
 from beta_env import run_episode
 from beta_eval import write_json
 from strategic_features import features
-from train_strategy import RunPolicy, load_base, normalize_protocol, np
+from train_strategy import RUN_STRATEGY, RunPolicy, load_base, normalize_protocol, np
 
 
 class CachedBase:
@@ -64,6 +64,7 @@ def compare(folder, limit, output):
     same_host = protocol["host"] == sha(MANIFEST)
     model = load_base()
     variants = tuple(protocol["variants"])
+    display = {name: RUN_STRATEGY if variants == ("boss_deck",) else name for name in variants}
     weights = {name: np.asarray(checkpoint["weights"][name], dtype=np.float32) for name in variants}
     sampled = anchor["rows"][:limit]
     by_seed = []
@@ -109,12 +110,12 @@ def compare(folder, limit, output):
         by_seed.append({"seed": row["seed"], "matches_saved_anchor": matches,
                         "status": played["status"], "floor": played["floor"], "first_change": first_change})
         print(f"{row['seed']}: {played['status']} floor={played['floor']} "
-              f"anchor_match={matches} changed={','.join(first_change) or '-'}", flush=True)
+              f"anchor_match={matches} changed={','.join(display[name] for name in first_change) or '-'}", flush=True)
     report = {
         "round": checkpoint["round"], "same_host_as_checkpoint": same_host,
         "host_revision": host["host_revision"], "strategic_decisions": sum(scenes.values()),
         "decisions_by_scene": dict(scenes), "anchor_top_two_margin": percentiles(gaps),
-        "cohorts": {name: {"choice_changes": sum(changes[name].values()),
+        "cohorts": {name: {"label": display[name], "choice_changes": sum(changes[name].values()),
                             "changes_by_scene": dict(changes[name]),
                             "starting_from_anchor_adjustment_range": percentiles(ranges[name])}
                     for name in variants},

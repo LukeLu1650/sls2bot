@@ -1,18 +1,18 @@
 """Run bounded, resumable strategic-action training in Windows Standard mode."""
 import argparse
 from collections import Counter
-import hashlib
+from dataclasses import asdict
 import json
 import os
 from pathlib import Path
 import random
-import statistics
 from time import perf_counter
 
 from beta_eval import BUILD, CHECKOUT, HOST, MANIFEST, ROOT, sha, verify_host, wilson, write_json
 from beta_env import run_episode
 from strategic_features import FEATURE_COUNT, VARIANTS, features, probabilities
 from train_standard import StandardPolicy, np
+from strategy_updates import training_rng, update_config, update_weights
 
 
 BASE = ROOT / "results/windows-v0.113.1/standard-continuation"
@@ -20,7 +20,10 @@ ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SCHEMA = 2
 # Earlier schema-2 trainer used the same features and update but always ran all cohorts.
 PRE_VARIANT_TRAINER = "e79cb0acf212f08843e9e8857aff9018c39de9c0e9a4a061cf522f65069cba5e"
-STRATEGY_FILES = ("train_strategy.py", "strategic_features.py", "beta_env.py", "train_standard.py", "necro_policy.py")
+PRE_SCHEDULE_TRAINER = "1663e383059ad1df35d218c669e8aba16194c782edf911111c93f7d54c4d6ef4"
+STRATEGY_FILES = ("train_strategy.py", "strategic_features.py", "strategy_updates.py",
+                  "beta_env.py", "train_standard.py", "necro_policy.py")
+RUN_STRATEGY = "run_strategy"
 
 
 def panel(domain, number, unique_key):
@@ -43,12 +46,16 @@ def load_base():
 
 
 class RunPolicy:
-    def __init__(self, base, variant, weights, rng=None):
+    def __init__(self, base, variant, weights, rng=None, *, temperature=1.0, rollout_index=0):
         self.base = base
         self.variant = variant
         self.weights = weights
         self.rng = rng
+        self.temperature = temperature
+        self.rollout_index = rollout_index
         self.gradients = []
+        self.max_feature_pair_bound = 0.0
+        self.non_greedy = 0
         self.reason = None
         self.coverage = Counter()
 
@@ -67,9 +74,13 @@ class RunPolicy:
             if self.rng is None:
                 selected = int(np.argmax(logits))
             else:
-                distribution = probabilities(logits)
+                distribution = probabilities(logits / self.temperature)
                 selected = int(self.rng.choice(len(actions), p=distribution.astype(np.float64) / distribution.sum(dtype=np.float64)))
-                self.gradients.append(matrix[selected] - distribution @ matrix)
+                self.gradients.append((matrix[selected] - distribution @ matrix) / self.temperature)
+                self.non_greedy += int(selected != np.argmax(logits))
+                # The triangle inequality bounds the feature distance between any pair.
+                pair_bound = 2 * float(np.max(np.linalg.norm(matrix - matrix.mean(axis=0), axis=1)))
+                self.max_feature_pair_bound = max(self.max_feature_pair_bound, pair_bound)
         action = actions[selected]
         if action["action"] == "remove_card":
             self.reason = "remove_card"
@@ -92,18 +103,26 @@ def reward(row):
 
 def play(base, variant, weights, seeds, args, training=False):
     rows, samples = [], []
+    temperature = args.update_settings.temperature if training else 1.0
+    repeats = args.rollouts_per_seed if training else 1
+    display = RUN_STRATEGY if variant == "boss_deck" and args.single_full_strategy else variant
     for seed in seeds:
-        rng = np.random.default_rng(int.from_bytes(hashlib.sha256(seed.encode()).digest()[:8], "little")) if training else None
-        chooser = RunPolicy(base, variant, weights, rng)
-        row = run_episode(HOST, seed, "standard", args.ascension, chooser, max_steps=args.max_steps,
-                          episode_timeout=args.episode_timeout, strategic_observations=True)
-        row["offered_candidates"] = dict(chooser.coverage)
-        row["sampled_strategic_decisions"] = len(chooser.gradients)
-        rows.append(row)
-        if training and row["status"] in {"victory", "defeat"} and chooser.gradients:
-            samples.append((reward(row), np.mean(chooser.gradients, axis=0)))
-        print(f"{'train' if training else 'eval'} {variant:<9} {seed}  {row['status']:<18}"
-              f" act={row['act']} floor={row['floor']} steps={row['steps']}", flush=True)
+        for rollout in range(repeats):
+            rng = training_rng(seed, rollout) if training else None
+            chooser = RunPolicy(base, variant, weights, rng, temperature=temperature, rollout_index=rollout)
+            row = run_episode(HOST, seed, "standard", args.ascension, chooser, max_steps=args.max_steps,
+                              episode_timeout=args.episode_timeout, strategic_observations=True)
+            row["offered_candidates"] = dict(chooser.coverage)
+            row["sampled_strategic_decisions"] = len(chooser.gradients)
+            row["sampled_non_greedy"] = chooser.non_greedy
+            row["rollout_index"] = rollout
+            row["training_temperature"] = temperature
+            rows.append(row)
+            if training and row["status"] in {"victory", "defeat"} and chooser.gradients:
+                samples.append((reward(row), np.mean(chooser.gradients, axis=0), chooser.max_feature_pair_bound))
+            label = f"{seed}/{rollout+1}" if repeats > 1 else seed
+            print(f"{'train' if training else 'eval'} {display:<12} {label}  {row['status']:<18}"
+                  f" act={row['act']} floor={row['floor']} steps={row['steps']}", flush=True)
     return rows, samples
 
 
@@ -150,15 +169,21 @@ def strategy_sources():
 def normalize_protocol(protocol):
     compatible = dict(protocol)
     compatible.setdefault("variants", list(VARIANTS))
+    compatible.setdefault("update_schedule", "standard")
+    compatible.setdefault("warmup_rounds", 12)
+    compatible.setdefault("rollouts_per_seed", 1)
     sources = compatible["sources"]
-    if compatible["schema"] == SCHEMA and sources.get("train_strategy.py") == PRE_VARIANT_TRAINER:
-        compatible["sources"] = {**sources, "train_strategy.py": sha(Path(__file__))}
+    if compatible["schema"] == SCHEMA and sources.get("train_strategy.py") in (PRE_VARIANT_TRAINER, PRE_SCHEDULE_TRAINER):
+        compatible["sources"] = {**sources, "train_strategy.py": sha(Path(__file__)),
+                                 "strategy_updates.py": sha(Path(__file__).with_name("strategy_updates.py"))}
     return compatible
 
 
 def fingerprint(args, variants):
     return {"schema": SCHEMA, "game": BUILD, "host": sha(MANIFEST), "mode": "standard",
             "variants": list(variants),
+            "update_schedule": args.update_schedule, "warmup_rounds": args.warmup_rounds,
+            "rollouts_per_seed": args.rollouts_per_seed,
             "seed_key": args.seed_key, "ascension": args.ascension, "games_per_round": args.games,
             "development_games": args.eval_games, "evaluate_every": args.eval_every,
             "max_steps": args.max_steps, "episode_timeout": args.episode_timeout,
@@ -183,8 +208,13 @@ def main():
     parser.add_argument("--episode-timeout", type=positive_int, default=65)
     parser.add_argument("--ascension", type=int, choices=range(11), default=0)
     parser.add_argument("--seed-key", default="necro-standard")
-    parser.add_argument("--variant", choices=("all", *VARIANTS),
-                        help="Train one policy or all three. Resume defaults to the checkpoint's selection.")
+    parser.add_argument("--variant", choices=("all", RUN_STRATEGY, *VARIANTS),
+                        help="run_strategy selects the full-feature policy; boss_deck is its legacy name.")
+    parser.add_argument("--update-schedule", choices=("standard", "warmup"),
+                        help="Use the original update or normalize returns and taper exploration.")
+    parser.add_argument("--warmup-rounds", type=positive_int, help="Rounds until the warmup settings settle (default 12).")
+    parser.add_argument("--rollouts-per-seed", type=positive_int,
+                        help="Independent policy samples per training seed (default 1); eval always uses one.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--final", action="store_true", help="Evaluate saved checkpoints once without updating weights")
     parser.add_argument("--test-ascension", type=int, choices=range(11), help="Final evaluation difficulty")
@@ -201,10 +231,16 @@ def main():
     state_file = args.out / "checkpoint.json"
     old = json.loads(state_file.read_bytes()) if args.resume or args.final else None
     previous_protocol = normalize_protocol(old["protocol"]) if old else None
+    saved_settings = previous_protocol or {}
+    for key, default in (("update_schedule", "standard"), ("warmup_rounds", 12), ("rollouts_per_seed", 1)):
+        if getattr(args, key) is None:
+            setattr(args, key, saved_settings.get(key, default))
     if args.variant is None and previous_protocol:
         variants = tuple(previous_protocol["variants"])
     else:
-        variants = VARIANTS if args.variant in (None, "all") else (args.variant,)
+        selected = "boss_deck" if args.variant == RUN_STRATEGY else args.variant
+        variants = VARIANTS if selected in (None, "all") else (selected,)
+    args.single_full_strategy = variants == ("boss_deck",)
     header = fingerprint(args, variants)
     previous = 0
     weights = {name: np.zeros(FEATURE_COUNT, dtype=np.float32) for name in variants}
@@ -255,17 +291,16 @@ def main():
         start = perf_counter()
         seeds = panel(f"train/{number}", args.games, args.seed_key)
         assert set(seeds).isdisjoint(dev)
-        report = {"round": number, "train_panel": seeds, "development_panel": dev, "cohorts": {}}
+        args.update_settings = update_config(args.update_schedule, number, args.warmup_rounds)
+        report = {"round": number, "train_panel": seeds, "development_panel": dev,
+                  "training_settings": asdict(args.update_settings), "cohorts": {}}
         for name, values in weights.items():
             training, samples = play(base, name, values, seeds, args, training=True)
-            changed = False
-            if samples:
-                baseline = statistics.mean(score for score, _ in samples) if len(samples) > 1 else .05
-                direction = np.mean([(score - baseline) * gradient for score, gradient in samples], axis=0)
-                updated = np.clip(values + 0.6 * direction, -2.0, 2.0)
-                changed = not np.array_equal(values, updated)
-                values[:] = updated
-            cohort = {"valid_training_episodes": len(samples), "optimizer_steps": int(bool(samples)),
+            updated, update_stats = update_weights(values, samples, args.update_settings)
+            changed = not np.array_equal(values, updated)
+            values[:] = updated
+            cohort = {"label": RUN_STRATEGY if args.single_full_strategy else name,
+                      "valid_training_episodes": len(samples), **update_stats,
                       "weights_changed": changed, "train": summarize(training), "train_rows": training}
             if number % args.eval_every == 0 or number == args.rounds:
                 evaluated, _ = play(base, name, values, dev, args)

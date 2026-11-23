@@ -51,13 +51,35 @@ $a0 = @('--out','runs/strategy-a0-v3','--ascension','0','--games','8','--eval-ga
 & $py scripts/train_strategy.py @a0 --rounds 12 --resume
 ```
 
-要集中资源训练完整特征组，可以启用 `--variant boss_deck`。此时每轮只采样这一组，保留冻结的 `anchor` 同种子对照。单组检查点可直接续训，`--resume` 会读取已保存的组别。只训练单组可以比较完整策略与原模型的差异；测量路线与 Boss／牌组特征各自的贡献仍使用三组实验。
+完整特征单组模式叫 **run_strategy**，涵盖路线、构筑、Boss 准备和其他战略选择。启用 `--variant run_strategy` 后，训练日志显示此名称，检查点沿用 `boss_deck` 键以兼容旧记录，旧参数 `--variant boss_deck` 也能使用。冻结的 `anchor` 仍在同种子上评测。只训练单组可以比较完整策略与原模型的差异；测量路线与 Boss／牌组特征各自的贡献仍使用三组实验。
 
 ```powershell
-$boss = @('--out','runs/strategy-boss-deck-a0','--ascension','0','--variant','boss_deck','--games','24','--eval-games','8','--eval-every','2')
-& $py scripts/train_strategy.py @boss --rounds 4
-& $py scripts/train_strategy.py @boss --rounds 12 --resume
+$strategy = @('--out','runs/strategy-run-a0','--ascension','0','--variant','run_strategy','--games','24','--eval-games','8','--eval-every','2')
+& $py scripts/train_strategy.py @strategy --rounds 4
+& $py scripts/train_strategy.py @strategy --rounds 12 --resume
 ```
+
+### 热身后收回探索
+
+`--update-schedule warmup` 是一个可选训练配置。它按批次将回报减去均值，再除以批内标准差（分母至少 0.005），并裁剪到 ±2.5。这样早期每层 0.005 的奖励差也能产生可见的更新。少于两局有效对局时本轮跳过更新。评测始终直接选择最高分动作。
+
+| 训练设置 | 第 1 轮 | 默认第 12 轮及之后 |
+| --- | ---: | ---: |
+| 战略动作采样温度 | 1.40 | 0.90 |
+| 参数更新步长 | 0.90 | 0.30 |
+| 已采样局面中单次更新改变候选分差的上界 | 0.35 | 0.15 |
+
+温度越高，合法候选的采样概率越接近，能探索更多选路、选牌和事件组合。分差上界是从权重步长与已采样候选的特征距离计算出的保守上界。每轮报告记录这些设置、更新前的回报标准差、权重步长、是否触及上界和非最高分动作的采样次数。热身长度用 `--warmup-rounds` 指定，增加目标总轮数不会把温度重新调高。
+
+每轮种子本来就不同。加 `--rollouts-per-seed 2` 可让同一个游戏种子用两个独立随机流各玩一遍，看到同一初始规则下的不同决策路径。比如 `--games 12 --rollouts-per-seed 2` 每轮仍是 **24 局**，共 12 个游戏种子。更重视地图和遭遇多样性时，保持 24 个不同种子、每个只打一局。战斗策略仍沿用冻结模型。
+
+```powershell
+$warm = @('--out','runs/strategy-run-a0-warm','--ascension','0','--variant','run_strategy','--games','12','--rollouts-per-seed','2','--eval-games','8','--eval-every','2','--update-schedule','warmup','--warmup-rounds','12')
+& $py scripts/train_strategy.py @warm --rounds 4
+& $py scripts/train_strategy.py @warm --rounds 12 --resume
+```
+
+热身后先用同种子比较首选动作改变、进第一幕 Boss 的局数和血量，再看过幕率。首选变化用于验证训练信号确实影响了决策，策略强弱由开发种子和最后的留出评测衡量。原配置是默认值，可用于同预算对照。
 
 训练以前台方式运行，关闭当前任务不会自动定时启动。按 **Ctrl+C** 可停止，在已有输出目录上加 `--resume` 会从最后完成的轮次继续。保持原来升阶、局数、种子键、评测间隔、单局限制和代码版本。`--rounds` 表示目标总轮数，每轮生成检查点。每个输出目录只启动一个训练进程。默认单局上限是 750 个动作与 65 秒，进入后期后可在新阶段适当提高。
 

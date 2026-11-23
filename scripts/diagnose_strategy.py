@@ -1,7 +1,6 @@
 """Inspect training failures or record reproducible diagnostics while training."""
 import argparse
 from collections import Counter, defaultdict
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -101,7 +100,8 @@ def scope_report(folder):
 
 def case_key(item):
     row = item["row"]
-    return tuple(row.get(key) for key in ("seed", "status", "error", "act", "floor", "steps", "requested_ascension"))
+    return (*[row.get(key) for key in ("seed", "status", "error", "act", "floor", "steps", "requested_ascension")],
+            row.get("rollout_index", 0))
 
 
 def describe(trace):
@@ -128,22 +128,25 @@ def replay_legacy(item, checkpoint):
     rng = None
     expected = item["row"]
     seed = expected["seed"]
+    rollout = expected.get("rollout_index", 0)
+    temperature = expected.get("training_temperature", 1.0)
     if phase == "train":
         if round_number != 1 or "start_from" in protocol:
             return {"unavailable": "Pre-round parameters were not saved. Use record for future runs."}
         weights = strategy.np.zeros(strategy.FEATURE_COUNT, dtype=strategy.np.float32)
-        rng = strategy.np.random.default_rng(int.from_bytes(hashlib.sha256(seed.encode()).digest()[:8], "little"))
+        rng = strategy.training_rng(seed, rollout)
     elif group != "anchor":
         if round_number != checkpoint["round"]:
             return {"unavailable": "Matching post-round checkpoint is unavailable. Use record for future runs."}
         weights = strategy.np.asarray(checkpoint["weights"][group], dtype=strategy.np.float32)
-    policy = strategy.RunPolicy(strategy.load_base(), group, weights, rng)
+    policy = strategy.RunPolicy(strategy.load_base(), group, weights, rng, temperature=temperature, rollout_index=rollout)
     trace = Trace()
     with patch.object(beta_env, "_Host", trace.host_class()):
         row = beta_env.run_episode(HOST, seed, "standard", item["ascension"] if item["ascension"] is not None
                                    else expected.get("requested_ascension", protocol["ascension"]),
                                    policy, max_steps=min(protocol["max_steps"], expected["steps"] + 5),
                                    episode_timeout=protocol["episode_timeout"], strategic_observations=True)
+    row["rollout_index"] = rollout
     return {"status": row["status"], "same_result": case_key({"row": row}) == case_key(item),
             "trace": trace.detail(), "result": row}
 
@@ -239,6 +242,8 @@ def record(argv):
             with patch.object(beta_env, "_Host", trace.host_class()):
                 row = original(*positional, **keywords)
             if row["status"] in FAILURES:
+                chooser = positional[4]
+                row.update(rollout_index=chooser.rollout_index, training_temperature=chooser.temperature)
                 folder = args.out / "diagnostics"
                 folder.mkdir(exist_ok=True)
                 target = folder / f"trace-{row['seed']}-{variant}-{uuid4().hex[:12]}.json"
