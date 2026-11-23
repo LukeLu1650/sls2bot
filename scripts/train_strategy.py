@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import random
+import statistics
 from time import perf_counter
 
 from beta_eval import BUILD, CHECKOUT, HOST, MANIFEST, ROOT, sha, verify_host, wilson, write_json
@@ -21,6 +22,7 @@ SCHEMA = 2
 # Earlier schema-2 trainer used the same features and update but always ran all cohorts.
 PRE_VARIANT_TRAINER = "e79cb0acf212f08843e9e8857aff9018c39de9c0e9a4a061cf522f65069cba5e"
 PRE_SCHEDULE_TRAINER = "1663e383059ad1df35d218c669e8aba16194c782edf911111c93f7d54c4d6ef4"
+PRE_BOSS_REPORT_FIX = "0d93f9e20d2bb7f3809e7e52d4ff3ffc4739773cddff274052489b6455a1e584"
 STRATEGY_FILES = ("train_strategy.py", "strategic_features.py", "strategy_updates.py",
                   "beta_env.py", "train_standard.py", "necro_policy.py")
 RUN_STRATEGY = "run_strategy"
@@ -173,7 +175,8 @@ def normalize_protocol(protocol):
     compatible.setdefault("warmup_rounds", 12)
     compatible.setdefault("rollouts_per_seed", 1)
     sources = compatible["sources"]
-    if compatible["schema"] == SCHEMA and sources.get("train_strategy.py") in (PRE_VARIANT_TRAINER, PRE_SCHEDULE_TRAINER):
+    reporting_compatible = (PRE_VARIANT_TRAINER, PRE_SCHEDULE_TRAINER, PRE_BOSS_REPORT_FIX)
+    if compatible["schema"] == SCHEMA and sources.get("train_strategy.py") in reporting_compatible:
         compatible["sources"] = {**sources, "train_strategy.py": sha(Path(__file__)),
                                  "strategy_updates.py": sha(Path(__file__).with_name("strategy_updates.py"))}
     return compatible
