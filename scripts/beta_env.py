@@ -6,7 +6,7 @@ omitted. Explicit card prompts retain the ordering and indices from the host.
 Candidates use the host's legality flags where available. The host does not
 expose an exhaustive legal-action API: card picks use combinations in displayed
 order (up to 256 choices), potions are usable only in combat here, and merchant
-potion purchases are offered only when carrying fewer than two potions. The
+potion purchases use the actual game-reported free slots. The
 subset omits potion discards. The host automatically collects non-card combat
 and treasure rewards.
 """
@@ -46,7 +46,8 @@ _PUBLIC_FIELDS = {
     ),
 }
 _PUBLIC_CONTEXT = ("act", "act_name", "floor", "room_type", "game_mode", "ascension", "boss")
-_PUBLIC_PLAYER = ("name", "hp", "max_hp", "block", "gold", "relics", "potions", "deck_size", "deck")
+_PUBLIC_PLAYER = ("name", "hp", "max_hp", "block", "gold", "relics", "potions", "deck_size", "deck",
+                  "potion_capacity", "has_open_potion_slots")
 _PASSIVE_POTIONS = {"Fairy in a Bottle", "Deprecated Potion"}
 
 
@@ -93,7 +94,11 @@ def _shop_actions(state):
         player = state["player"]
         gold = player["gold"]
         categories = [("cards", "card"), ("relics", "relic")]
-        if len(player.get("potions") or []) < 2:
+        capacity = player.get("potion_capacity")
+        free_slots = player.get("has_open_potion_slots")
+        if free_slots is None and capacity is not None:
+            free_slots = len(player.get("potions") or []) < capacity
+        if free_slots:
             categories.append(("potions", "potion"))
         for category, item in categories:
             actions.extend(

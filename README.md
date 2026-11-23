@@ -6,7 +6,7 @@
 | --- | --- |
 | [Windows 骨头人基线](docs/windows-baseline.md) | 本机构建、复测命令、实测结果、模型与宿主的适用范围 |
 | [当前模型与可选动作](docs/current-policy.md) | 标准模式的动作、观测，以及继续训练后的首战结果 |
-| [本地回放 Mod](docs/replay-mod.md) | 在游戏内查看模型操作，或用新模型的轨迹重新打包 |
+| [实机接管 Mod](docs/live-pilot.md) | 用 F7 随时接管当前标准骨头人对局，并查看模型打分 |
 | [骨头人训练设计](docs/necrobinder.md) | 玩家可见特征、角色机制、PPO 课程和实机验收 |
 | [游戏版本迁移](docs/versions-and-modes.md) | 标准模式的新构建验证和历史模式资料 |
 | [GPT‑6.2 Sol 交接提示词](docs/sol-handoff.md) | 可独立执行的后续开发与验证任务，有明确的预算和停止条件 |

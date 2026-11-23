@@ -65,13 +65,26 @@ def prepare(game):
         shutil.copyfile(data / path.name, path)
         files.append(path)
     subprocess.run([sys.executable, "scripts/extract_localization.py", str(game / "SlayTheSpire2.pck")], cwd=CHECKOUT, check=True)
-    subprocess.run(["dotnet", "build", "src/Sts2Headless/Sts2Headless.csproj", "-c", "Debug",
-                    "--disable-build-servers", "--nologo", "-v:q"], cwd=CHECKOUT, check=True)
+    simulator = CHECKOUT / "src/Sts2Headless/RunSimulator.cs"
+    original = simulator.read_bytes()
+    marker = b'["deck_size"] = '
+    if original.count(marker) != 1:
+        raise ValueError("Pinned PlayerSummary shape changed")
+    eol = b"\r\n" if b"\r\n" in original else b"\n"
+    fields = [b'["potion_capacity"] = player.PotionSlots.Count,',
+              b'            ["has_open_potion_slots"] = player.HasOpenPotionSlots,',
+              b"            " + marker]
+    try:
+        simulator.write_bytes(original.replace(marker, eol.join(fields)))
+        subprocess.run(["dotnet", "build", "src/Sts2Headless/Sts2Headless.csproj", "-c", "Debug",
+                        "--disable-build-servers", "--nologo", "-v:q"], cwd=CHECKOUT, check=True)
+    finally:
+        simulator.write_bytes(original)
     files.extend([HOST, HOST.with_name("GodotSharp.dll")])
     for language in ("eng", "zhs"):
         files.extend(sorted((CHECKOUT / ("localization_" + language)).glob("*.json")))
     manifest = {"build": BUILD, "game_commit": GAME_COMMIT, "host_revision": REVISION,
-                "platform": "Windows x64", "source_pck_sha256": sha(game / "SlayTheSpire2.pck"),
+                "platform": "Windows x64", "potion_slots_schema": 1, "source_pck_sha256": sha(game / "SlayTheSpire2.pck"),
                 "files": {p.relative_to(CHECKOUT).as_posix(): sha(p) for p in files}}
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     temp = MANIFEST.with_suffix(".tmp")

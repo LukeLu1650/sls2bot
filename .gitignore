@@ -5,3 +5,6 @@
 __pycache__/
 /mod/bin/
 /mod/obj/
+/live/bin/
+/live/obj/
+/live/upstream/

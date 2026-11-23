@@ -1,0 +1,11 @@
+{
+  "id": "NecroPilot",
+  "name": "Necrobinder · Live Pilot",
+  "author": "Local training project",
+  "description": "F7 switches the local model on or off inside standard single-player Necrobinder runs.",
+  "version": "0.1.0",
+  "has_dll": true,
+  "has_pck": false,
+  "affects_gameplay": true,
+  "dependencies": []
+}
