@@ -3,6 +3,7 @@ from collections import Counter
 from functools import lru_cache
 import hashlib
 import math
+import re
 
 import numpy as np
 
@@ -21,7 +22,7 @@ def coord(node):
 
 
 def routes(view, starts, depth=4):
-    """Average the visible reachable room types by depth, without reading encounters."""
+    """Visible room proportions and true outgoing forks, for each of four layers."""
     board = {coord(node): node for row in (view or {}).get("rows", []) for node in row}
     layer = set(starts)
     totals = Counter()
@@ -29,27 +30,33 @@ def routes(view, starts, depth=4):
         nodes = [board[key] for key in sorted(layer) if key in board]
         if not nodes:
             break
-        factor = 1 / len(nodes) / (1 + distance)
+        children = [[coord(child) for child in node.get("children") or []] for node in nodes]
         for node in nodes:
-            totals[node.get("type", "?")] += factor
-        totals["width"] += min(len(nodes), 5) / 5 * (1 / (1 + distance))
-        layer = {coord(child) for node in nodes for child in node.get("children") or []}
+            totals[f"{distance + 1}/{node.get('type', '?')}"] += 1 / len(nodes)
+        totals[f"{distance + 1}/width"] = min(len(nodes), 5) / 5
+        totals[f"{distance + 1}/forks"] = sum(len(edges) > 1 for edges in children) / len(nodes)
+        layer = {child for edges in children for child in edges}
     return totals
 
 
 def card_values(card):
     stats = card.get("stats") or {}
     damage = stats.get("calculateddamage", stats.get("damage", 0)) * max(1, stats.get("repeat", 1))
-    area = card.get("target_type") == "AllEnemies"
-    if "target_type" not in card:
-        description = card.get("description") or ""
-        description = description if isinstance(description, str) else description.get("en", "")
-        area = "all enemies" in description.lower()
+    description = card.get("description") or ""
+    text = (description if isinstance(description, str) else description.get("en") or "").lower()
+    area = card.get("target_type") == "AllEnemies" or "all enemies" in text
+    draw = stats.get("draw", 0)
+    if not draw:
+        draw_match = re.search(r"\bdraw\s+(\d+|\{(?:cards|calculatedcards)(?=[:}]))", text)
+        if draw_match:
+            value = draw_match[1]
+            draw = stats.get(value[1:], 0) if value.startswith("{") else int(value)
+    doom = stats.get("doompower", stats.get("doom", 0))
     return np.array([
-        damage / 12, damage / 12 if area else 0, stats.get("block", 0) / 10,
-        stats.get("cards", stats.get("draw", 0)) / 2, stats.get("energy", 0) / 2,
+        damage / 12 if not area else 0, damage / 12 if area else 0, stats.get("block", 0) / 10,
+        draw / 2, stats.get("energy", 0) / 2,
         max(0, card.get("card_cost", card.get("cost", 0)) or 0) / 2,
-        stats.get("summon", 0) / 8, stats.get("doom", 0) / 10,
+        stats.get("summon", 0) / 8, doom / 10,
         float(card.get("type") in {"Curse", "Status"}), float(card.get("upgraded", False)),
     ], dtype=np.float32)
 
@@ -101,7 +108,7 @@ def action_details(state, action, reason):
     return title, values
 
 
-MEASURES = ("damage", "area", "block", "draw", "energy", "cost", "osty", "doom", "dead_draw", "upgraded")
+MEASURES = ("single_target", "area", "block", "draw", "energy", "cost", "osty", "doom", "dead_draw", "upgraded")
 
 
 def features(state, actions, variant, reason):
@@ -112,7 +119,9 @@ def features(state, actions, variant, reason):
     act = context.get("act") or 1
     board = state.get("visible_map") if variant != "current" else None
     current = (board or {}).get("current_coord")
-    view = routes(board, [coord(current)]) if current else {}
+    current_node = next((node for row in (board or {}).get("rows", []) for node in row
+                         if current and coord(node) == coord(current)), {})
+    view = routes(board, [coord(child) for child in current_node.get("children") or []])
     count = max(1, len(player.get("deck") or []))
     deck = (sum((card_values(card) for card in player.get("deck") or []), np.zeros(len(MEASURES))) / count
             if variant == "boss_deck" else None)
@@ -128,7 +137,9 @@ def features(state, actions, variant, reason):
 
         prefix = f"{scene}/{name}"
         add(prefix)
-        add(prefix + "/hp", hp - 0.5)
+        add(prefix + "/hp-fraction", hp - 0.5)
+        add(prefix + "/current-hp", player["hp"] / 75)
+        add(prefix + "/max-hp", player["max_hp"] / 75)
         add(prefix + "/act", act / 3)
         for key, value in sorted(args.items()):
             add(f"{prefix}/position/{key}/{value}")

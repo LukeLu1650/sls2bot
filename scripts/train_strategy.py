@@ -17,7 +17,7 @@ from train_standard import StandardPolicy, np
 
 BASE = ROOT / "results/windows-v0.113.1/standard-continuation"
 ALPHABET = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-SCHEMA = 1
+SCHEMA = 2
 
 
 def panel(domain, number, unique_key):
@@ -176,7 +176,9 @@ def main():
         parser.error("--test-ascension requires --final")
     if args.start_from and (args.resume or args.final):
         parser.error("--start-from starts a new output directory")
-    verify_host()
+    host = verify_host()
+    if host.get("event_patch_sha256") != sha(ROOT / "patches/HeadlessEventPresentation.cs"):
+        parser.error("Rebuild the Windows headless host with scripts/beta_build.py before training")
     os.environ["STS2_LIB"] = str(CHECKOUT / "lib")
     header = fingerprint(args)
     state_file = args.out / "checkpoint.json"
@@ -229,11 +231,15 @@ def main():
         report = {"round": number, "train_panel": seeds, "development_panel": dev, "cohorts": {}}
         for name, values in weights.items():
             training, samples = play(base, name, values, seeds, args, training=True)
+            changed = False
             if samples:
                 baseline = statistics.mean(score for score, _ in samples) if len(samples) > 1 else .05
                 direction = np.mean([(score - baseline) * gradient for score, gradient in samples], axis=0)
-                values[:] = np.clip(values + 0.6 * direction, -2.0, 2.0)
-            cohort = {"updates": len(samples), "train": summarize(training), "train_rows": training}
+                updated = np.clip(values + 0.6 * direction, -2.0, 2.0)
+                changed = not np.array_equal(values, updated)
+                values[:] = updated
+            cohort = {"valid_training_episodes": len(samples), "optimizer_steps": int(bool(samples)),
+                      "weights_changed": changed, "train": summarize(training), "train_rows": training}
             if number % args.eval_every == 0 or number == args.rounds:
                 evaluated, _ = play(base, name, values, dev, args)
                 cohort.update(eval=summarize(evaluated), eval_rows=evaluated)
