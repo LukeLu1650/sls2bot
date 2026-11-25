@@ -29,8 +29,12 @@ public static class Live
     private static Task<string?>? _score;
     private static Task? _action;
     private static RunState? _run;
+    private static (int Act, int Floor)? _triggerRoom;
+    private static object? _trigger;
+    private static (int Act, int Floor)? _removalRoom;
     private static string? _requested, _previous;
     private static long _scoreStarted, _nextPoll, _actionStarted;
+    private static long? _selectionWaitSince;
 
     public static void Init()
     {
@@ -125,6 +129,10 @@ public static class Live
         CloseWorker();
         _score = null;
         _requested = _previous = null;
+        _triggerRoom = null;
+        _trigger = null;
+        _removalRoom = null;
+        _selectionWaitSince = null;
     }
 
     private static void CloseWorker()
@@ -185,10 +193,23 @@ public static class Live
         {
             if (waiting == "run over") Stop("Run over");
             else if (waiting.StartsWith("your choice", StringComparison.Ordinal)) Stop(waiting);
+            else if (waiting.StartsWith("card selection: ", StringComparison.Ordinal))
+            {
+                _scores.Text = "";
+                _selectionWaitSince ??= Environment.TickCount64;
+                if (Environment.TickCount64 - _selectionWaitSince.Value >= 5000)
+                {
+                    Log.Info("[NecroPilot] No ready action for " + waiting);
+                    Stop("Card selection needs manual control");
+                }
+                else _status.Text = "Waiting for " + waiting;
+            }
             else _status.Text = string.IsNullOrEmpty(waiting) ? "Waiting for a game decision" : waiting;
+            if (!waiting.StartsWith("card selection: ", StringComparison.Ordinal)) _selectionWaitSince = null;
             ClearScore();
             return;
         }
+        _selectionWaitSince = null;
         if (pending.Context.StartsWith("crystal sphere", StringComparison.Ordinal))
         {
             Stop("Crystal Sphere · manual control");
@@ -203,7 +224,9 @@ public static class Live
             Stop("This choice needs manual control");
             return;
         }
-        string request = _observation!.Encode(run, player, pending.Decision, options);
+        var room = (run.CurrentActIndex, run.ActFloor);
+        string request = _observation!.Encode(run, player, pending.Decision, options,
+            _triggerRoom == room ? _trigger : null, _removalRoom == room ? "remove_card" : null);
         // State changed after the request, such as when the player took an action manually.
         if (_score != null && !string.Equals(request, _requested, StringComparison.Ordinal)) ClearScore();
         string signature = pending.Context + "\n" + request;
@@ -238,11 +261,19 @@ public static class Live
         }
         _previous = signature;
         _actionStarted = Environment.TickCount64;
-        _action = pending.Execute(options.Length == 0 ? new LegalAction() : options[selected]);
+        var action = options.Length == 0 ? new LegalAction() : options[selected];
+        if (pending.Decision.Type != DecisionType.CardSelect)
+            _removalRoom = action.Type == ActionType.RemoveCardService ? room : null;
+        if (pending.Decision.Type == DecisionType.Combat)
+        {
+            _trigger = _observation.CombatTrigger(action);
+            _triggerRoom = room;
+        }
+        _action = pending.Execute(action);
     }
 
     private static bool IsForced(string context) => context is
-        "claim gold" or "open shop" or "card select: confirm" or "hand select: confirm" or
+        "claim gold" or "open shop" or "card select: confirm" or "hand select: confirm" or "rest site: proceed" or
         "open chest" or "leave treasure room" or "event dialogue" or "event proceed" or
         "fake merchant: close counter" or "fake merchant: leave";
 

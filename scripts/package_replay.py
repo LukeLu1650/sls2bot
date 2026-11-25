@@ -22,10 +22,11 @@ def package(source, game, output):
     if not replay.get("episodes") or not all(row["frames"] for row in replay["episodes"]):
         raise ValueError("Replay episodes must have recorded decisions")
 
-    replay["first_combat"] = {
-        key: [sum(row["status"] == "combat_cleared" for row in rows), len(rows)]
-        for key, rows in report["cohorts"].items()
-    }
+    if "cohorts" in report:
+        replay["first_combat"] = {
+            key: [sum(row["status"] == "combat_cleared" for row in rows), len(rows)]
+            for key, rows in report["cohorts"].items()
+        }
     with (ROOT / "mod/NecroReplay.json").open(encoding="utf-8") as stream:
         manifest = json.load(stream)
     project = ROOT / "mod/NecroReplay.csproj"

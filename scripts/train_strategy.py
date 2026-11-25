@@ -199,6 +199,24 @@ def checkpoint(path, header, rounds, weights):
                       "weights": {name: values.tolist() for name, values in weights.items()}})
 
 
+def protocol_differences(previous, current):
+    differences = []
+    for key in sorted(set(previous) | set(current)):
+        old_value = previous.get(key)
+        new_value = current.get(key)
+        if old_value == new_value:
+            continue
+        if key == "sources":
+            for name in sorted(set(old_value or {}) | set(new_value or {})):
+                old_source = (old_value or {}).get(name)
+                new_source = (new_value or {}).get(name)
+                if old_source != new_source:
+                    differences.append(f"sources.{name}: checkpoint={old_source!r}, current={new_source!r}")
+        else:
+            differences.append(f"{key}: checkpoint={old_value!r}, current={new_value!r}")
+    return differences
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)

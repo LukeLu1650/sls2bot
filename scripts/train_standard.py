@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 from beta_eval import BUILD, CHECKOUT, HOST, ROOT, RulePolicy, verify_host, write_json
-from beta_env import run_episode
+from beta_env import action_cards, run_episode
 from necro_policy import NecroPolicy, np
 
 
@@ -121,6 +121,14 @@ def brief(state, actions, logits, chosen):
             if "target_index" in args:
                 name += " → " + label(find(state.get("enemies"), args["target_index"]))
             return name
+        if kind in {"pick_card", "select_cards", "select_bundle", "confirm_selection"}:
+            names = ", ".join(label(card) + ("+" if card.get("upgraded") else "")
+                              for card in action_cards(state, action))
+            if kind == "confirm_selection":
+                return f"Confirm · {names}" if names else "Skip selection"
+            return f"Select · {names}" if names else "Select cards"
+        if kind == "skip_select":
+            return "Skip selection"
         if "option_index" in args:
             return label(find(state.get("options"), args["option_index"]))
         if "card_index" in args:

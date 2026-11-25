@@ -1,11 +1,13 @@
 # 杀戮尖塔 2 · 骨头人零搜索策略
 
-当前只训练和评测 **标准模式** 的死灵契约师（Necrobinder）。从 A0 学习战斗与构筑，目标是标准 A10 整局通关。每次决策读入可见局面及候选动作，一次前向推理直接选动作。本地基线使用 **Windows public-beta v0.113.1** 游戏程序集、原生 .NET 9 和 NumPy，模型有 **18,099,905 个参数、6 层、宽度 256、4 头**。
+当前只训练和评测 **标准模式** 的死灵契约师（Necrobinder）。从 A0 学习战斗与构筑，目标是零真人数据纯 RL 达到标准 A10 连胜。每次决策读入可见局面及候选动作，一次前向推理直接选动作。本地宿主使用 **Windows public-beta v0.113.1** 游戏程序集与原生 .NET 9；最新版 [PPO v2](docs/ppo-v2-training.md) 采用轻量化 **6 层 / 宽度 256 / 4 头 / FFN 1024（7.27M 100% 全参数可训练）** 实体 Transformer，历史 NumPy 基线（18.1M 冻结骨干）保留用于对照。
 
 | 入口 | 内容 |
 | --- | --- |
+| [PPO v2 端到端训练（推荐）](docs/ppo-v2-training.md) | 轻量化全可训 6 层 Transformer、全量可见实体观测、房间边界信用分配、A0→A10 训练与 CombatSolver 引导 |
 | [Windows 骨头人基线](docs/windows-baseline.md) | 本机构建、复测命令、实测结果、模型与宿主的适用范围 |
 | [当前模型与可选动作](docs/current-policy.md) | 标准模式的动作、观测，以及继续训练后的首战结果 |
+| [标准 A0 战斗训练（历史对照）](docs/combat-training.md) | 旧版联合训练、难战课程、Steam 对齐 PPO v1 与有界搜索器 |
 | [自主训练路线与构筑](docs/strategy-training.md) | 三组对照、每阶段轮数、PowerShell 启动与续训 |
 | [实机接管 Mod](docs/live-pilot.md) | 用 F7 随时接管当前标准骨头人对局，并查看模型打分 |
 | [骨头人训练设计](docs/necrobinder.md) | 玩家可见特征、角色机制、PPO 课程和实机验收 |

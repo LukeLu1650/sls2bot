@@ -2,8 +2,11 @@
 import hashlib
 import json
 from functools import lru_cache
+import re
 
 import numpy as np
+
+from beta_env import action_cards
 
 
 @lru_cache(maxsize=8192)
@@ -28,6 +31,23 @@ def _visible_features(record, namespace):
     return result
 
 
+def _selection_card_features(card, namespace):
+    result = _visible_features(card, namespace)
+    if card.get("zone"):
+        result.append((f"{namespace}/zone/{card['zone']}", 1.0))
+    for keyword in card.get("keywords") or []:
+        result.append((f"{namespace}/keyword/{keyword}", 1.0))
+    text = card.get("description") or ""
+    if isinstance(text, dict):
+        text = text.get("en") or ""
+    words = re.findall(r"[a-z0-9_]+", re.sub(r"\[[^\]]*\]", "", text).lower())
+    result.extend((f"{namespace}/effect/{word}", 1.0) for word in dict.fromkeys(words))
+    for name, number in (card.get("stats") or {}).items():
+        if isinstance(number, (int, float)):
+            result.append((f"{namespace}/stat/{name}", np.sign(number) * np.log1p(abs(number))))
+    return result
+
+
 def _tokens(state, actions):
     scene = state.get("decision", "")
     summary = [(f"decision/{scene}", 1.0)]
@@ -35,6 +55,20 @@ def _tokens(state, actions):
                           ("context", state.get("context") or {}), ("osty", state.get("osty") or {})):
         summary.extend(_visible_features(record, label))
     tokens = [summary]
+    selection = scene in {"card_select", "bundle_select"} or (
+        scene == "card_reward" and state.get("in_combat"))
+    if selection:
+        picked = set(state.get("picked_indices") or [])
+        trigger = state.get("selection_trigger") or {}
+        summary.extend(_visible_features(trigger, "selection/trigger"))
+        if trigger.get("action"):
+            summary.append((f"selection/trigger/{trigger['action']}", 1.0))
+        for field, count in (("min", state.get("min_select", 1)), ("max", state.get("max_select", 1)),
+                             ("picked", len(picked))):
+            summary.append((f"selection/{field}/{count}", 1.0))
+        for card in state.get("cards") or []:
+            namespace = "selection/picked" if card["index"] in picked else "selection/offered"
+            tokens.append([(namespace, 1.0)] + _selection_card_features(card, namespace))
     for group in ("enemies", "hand", "player_powers"):
         for item in state.get(group) or []:
             features = [(group, 1.0)] + _visible_features(item, group)
@@ -55,8 +89,14 @@ def _tokens(state, actions):
         args = cmd.get("args") or {}
         # Discrete options have stable meaning within a single observation.
         for key, value in sorted(args.items()):
-            features.append((f"argument/{key}/{value}", 1.0))
-        if "card_index" in args:
+            if not selection or key not in {"indices", "card_index", "bundle_index"}:
+                features.append((f"argument/{key}/{value}", 1.0))
+        if selection:
+            cards = action_cards(state, cmd)
+            features.append((f"selection/action/count/{len(cards)}", 1.0))
+            for card in cards:
+                features.extend(_selection_card_features(card, "selection/action/card"))
+        elif "card_index" in args:
             group = "hand" if kind == "play_card" else "cards"
             features.extend(choice(group, args["card_index"]))
         if "target_index" in args:

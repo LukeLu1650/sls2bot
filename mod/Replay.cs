@@ -21,7 +21,7 @@ public static class Replay
     private static readonly Label[] CandidateLabels = new Label[5];
     private static readonly ProgressBar[] ScoreBars = new ProgressBar[5];
     private static HSlider _timeline = null!;
-    private static Button _play = null!;
+    private static Button _play = null!, _actTwo = null!;
     private static bool _playing, _wasF8;
     private static ulong _nextFrame;
 
@@ -143,6 +143,8 @@ public static class Replay
         _play = MakeButton("Play", TogglePlay);
         controls.AddChild(_play);
         controls.AddChild(MakeButton("Next", () => Move(1)));
+        _actTwo = MakeButton("Jump to Act II", JumpToActTwo);
+        controls.AddChild(_actTwo);
         stack.AddChild(controls);
         LoadRun(0);
     }
@@ -167,7 +169,15 @@ public static class Replay
         _frames = _run.GetProperty("frames");
         _timeline.MaxValue = _frames.GetArrayLength() - 1;
         _timeline.Value = 0;
+        _actTwo.Visible = _run.TryGetProperty("act2_frame", out _);
         Render();
+    }
+
+    private static void JumpToActTwo()
+    {
+        if (!_run.TryGetProperty("act2_frame", out var index)) return;
+        Pause();
+        _timeline.Value = index.GetInt32();
     }
 
     private static void Render()
@@ -177,7 +187,8 @@ public static class Replay
         var frame = _frames[i];
         _position.Text = $"Decision {i + 1} / {_frames.GetArrayLength()}     ·     Recorded run: {Value(_run, "result").Replace('_', ' ')}";
         _scene.Text = Value(frame, "scene").Replace('_', ' ');
-        _stats.Text = $"Floor {Value(frame, "floor")}   ·   Turn {Value(frame, "round")}\n" +
+        string act = frame.TryGetProperty("act", out var actNumber) ? $"Act {actNumber}   ·   " : "";
+        _stats.Text = $"{act}Floor {Value(frame, "floor")}   ·   Turn {Value(frame, "round")}\n" +
                       $"HP {Value(frame, "hp")} / {Value(frame, "max_hp")}   ·   Block {Value(frame, "block")}\n" +
                       $"Energy {Value(frame, "energy")}   ·   Osty HP {Value(frame, "osty")}";
         _enemies.Text = string.Join("\n", frame.GetProperty("enemies").EnumerateArray().Select(enemy =>
@@ -186,13 +197,21 @@ public static class Replay
                 $"{Value(intent, "kind")} {Value(intent, "damage")}"))));
         _hand.Text = "Hand  ·  " + string.Join("   ", frame.GetProperty("hand").EnumerateArray()
             .Select(card => $"{Value(card, "name")} [{Value(card, "cost")}]"));
-        _selected.Text = "Selected  ·  " + Value(frame, "selected");
+        string actionLabel = Value(frame, "source") switch
+        {
+            "recorded_prefix" => "Recorded action",
+            "forced" => "Only available action",
+            "terminal" => "Result",
+            _ => "Selected"
+        };
+        _selected.Text = actionLabel + "  ·  " + Value(frame, "selected");
         var scores = frame.GetProperty("scores");
-        double maximum = scores[0].GetProperty("score").GetDouble();
-        double minimum = scores[scores.GetArrayLength() - 1].GetProperty("score").GetDouble();
+        int count = scores.GetArrayLength();
+        double maximum = count == 0 ? 0 : scores[0].GetProperty("score").GetDouble();
+        double minimum = count == 0 ? 0 : scores[count - 1].GetProperty("score").GetDouble();
         for (int j = 0; j < CandidateLabels.Length; j++)
         {
-            bool visible = j < scores.GetArrayLength();
+            bool visible = j < count;
             CandidateLabels[j].Visible = ScoreBars[j].Visible = visible;
             if (!visible) continue;
             var item = scores[j];

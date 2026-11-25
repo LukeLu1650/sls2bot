@@ -2,7 +2,22 @@
 
 从 Steam 启动 Windows v0.113.1，启用 `Necrobinder · Live Pilot`，自己开任意种子的单人标准骨头人对局。实机面板默认关闭。用 **F7** 或面板开关启用，模型从正在运行的对局读取决策，直接走游戏的出牌、用药和选项入口。关闭会丢弃待执行的模型选择，并停止本地推理进程。已经提交给游戏的动作会继续结算。
 
-当前模型是标准 A0 首战继续训练的 18.10M 参数 checkpoint。面板显示所选动作、最高三项分数和 Python 推理毫秒数。Mod 每 45 ms 检查一次游戏是否接受决策，在动作执行、动画或过场中等待。调快游戏内动画速度可以缩短实际等待。强制流程如领取金币或继续对话由实机适配器执行。遇到无法处理的界面、异常或游戏拒绝动作时，面板交回控制权。卡牌多选经游戏 UI 逐张选取再确认，和训练宿主一次提交组合存在差异。
+默认模型是标准 A0 首战继续训练的 18.10M 参数检查点。面板显示所选动作、最高三项分数和 Python 推理毫秒数。Mod 每 45 ms 检查一次游戏是否接受决策，在动作执行、动画或过场中等待。调快游戏内动画速度可以缩短实际等待。强制流程如领取金币或继续对话由实机适配器执行。遇到无法处理的界面、异常或游戏拒绝动作时，面板交回控制权。卡牌多选逐张选取再确认，F7 会给每张候选发独立索引、牌面信息和当前选牌数量。
+
+用 `--checkpoint` 打包联合训练或课程训练检查点时，F7 同时使用战斗和路线构筑权重。战斗层用于出牌、用药和战中选牌。路线构筑层用于地图、奖励、商店、事件和其他局外选择。只部署战斗层时使用 `--combat-checkpoint`。
+
+```powershell
+$py = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py scripts/package_live.py --checkpoint runs/curriculum-a0/checkpoint.json --out artifacts/NecroPilot-current.zip
+```
+
+装好支持两组权重的 Mod 后，退出游戏，从工作区更新到同一编码和基座的新检查点。
+
+```powershell
+& $py scripts/update_live_weights.py runs/curriculum-a0/checkpoint.json
+```
+
+脚本先验证检查点和已安装的推理代码，备份旧文件到 `runs/necropilot-weight-backups/`，然后写入并核对新权重。Steam 库在别处时传入 `--game "实际安装目录"`。手动更新时，从同一份 ZIP 的 `NecroPilot/` 一起复制 `combat.dat`、`strategy.dat` 和 `model.dat` 到游戏的 `mods/NecroPilot/`。基座或推理代码更新时用整包覆盖。
 
 本机构建已通过编译。打包后的推理进程用训练宿主的真实标准 A0 首战验证了 17 个决策，均与同模型的直接推理一致。推理中位数为 13.6 ms，最慢 20.1 ms，数值仅涵盖 Python 模型计算。尚未在已登录 Steam 的游戏里验证中途切换或整局动画用时。
 
