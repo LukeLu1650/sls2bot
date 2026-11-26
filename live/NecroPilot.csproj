@@ -4,11 +4,26 @@
     <AssemblyName>NecroPilot</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <GameData>$(GameDir)/data_sts2_windows_x86_64</GameData>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GameData Condition="'$(GameDir)' != ''">$(GameDir)/data_sts2_windows_x86_64</GameData>
+    <GameData Condition="'$(GameData)' == ''">$(MSBuildThisFileDirectory)../artifacts/alphadefect/game/v0.114.0</GameData>
+    <EngineRoot>$(MSBuildThisFileDirectory)../external/AlphaDefect-Public/game-v0.114.0/engine/Sts2Headless</EngineRoot>
   </PropertyGroup>
+
   <ItemGroup>
     <Reference Include="sts2" HintPath="$(GameData)/sts2.dll" Private="false" />
     <Reference Include="GodotSharp" HintPath="$(GameData)/GodotSharp.dll" Private="false" />
     <Reference Include="0Harmony" HintPath="$(GameData)/0Harmony.dll" Private="false" />
+  </ItemGroup>
+
+  <!-- Reuse the exact v0.114.0 observation encoder, vocab, and RawPreview patch from AlphaDefect-Public -->
+  <ItemGroup>
+    <Compile Include="$(EngineRoot)/Engine/Decision.cs" Link="Shared/Decision.cs" />
+    <Compile Include="$(EngineRoot)/Engine/Vocab.cs" Link="Shared/Vocab.cs" />
+    <Compile Include="$(EngineRoot)/Engine/Observation.cs" Link="Shared/Observation.cs" />
+    <Compile Include="$(EngineRoot)/Engine/ObservationOracle.cs" Link="Shared/ObservationOracle.cs" />
+    <Compile Include="$(EngineRoot)/Engine/Obs/**/*.cs" LinkBase="Shared/Obs" />
+    <Compile Include="$(EngineRoot)/Engine/Compat/**/*.cs" LinkBase="Shared/Compat" />
   </ItemGroup>
 </Project>

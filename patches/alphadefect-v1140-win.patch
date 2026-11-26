@@ -1,0 +1,2083 @@
+diff --git a/game-v0.114.0/engine/Sts2Headless/VirtualFs.cs b/game-v0.114.0/engine/Sts2Headless/VirtualFs.cs
+index f80b3a5b47139a3039d4c7349d8de931b7cedcc2..533013e5b115ea644661642ca0dde7bfd4cb1f25 100644
+--- a/game-v0.114.0/engine/Sts2Headless/VirtualFs.cs
++++ b/game-v0.114.0/engine/Sts2Headless/VirtualFs.cs
+@@ -6,8 +6,9 @@ namespace Sts2Headless;
+ public static class VirtualFs
+ {
+     public static string ResDir => Path.Combine(GameAssemblies.Dir, "res");
+-    public static string UserDir { get; } = Path.Combine(
+-        System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), ".local/share/sls2/user");
++    public static string UserDir { get; } =
++        System.Environment.GetEnvironmentVariable("STS2_USER_DIR")
++        ?? Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), ".local/share/sls2/user");
+ 
+     public static string Map(string path)
+     {
+diff --git a/game-v0.114.0/python/sts2env/env.py b/game-v0.114.0/python/sts2env/env.py
+index 5ff5fd21b97e8df4eba97a64e38219d93b171074..869617bad63c1139c892da9b73fda7019ba499bd 100644
+--- a/game-v0.114.0/python/sts2env/env.py
++++ b/game-v0.114.0/python/sts2env/env.py
+@@ -3,9 +3,12 @@ from __future__ import annotations
+ 
+ import json
+ import os
++import queue
+ import selectors
++import shutil
+ import struct
+ import subprocess
++import threading
+ from pathlib import Path
+ from typing import Any, Sequence
+ 
+@@ -13,7 +16,8 @@ from .protocol import Obs, parse
+ 
+ REPO = Path(__file__).resolve().parents[2]
+ DEFAULT_DLL = REPO / "engine" / "Sts2Headless" / "bin" / "Release" / "net9.0" / "Sts2Headless.dll"
+-DOTNET = Path.home() / ".dotnet" / "dotnet"
++_DOTNET_FOUND = os.environ.get("STS2_DOTNET") or shutil.which("dotnet")
++DOTNET = Path(_DOTNET_FOUND) if _DOTNET_FOUND else (Path.home() / ".dotnet" / "dotnet")
+ # Rust 引擎（rust-engine/，`sts2-serve frames` 与 C# 的 serve 同协议）；租用机上放 musl 静态版，用 STS2_RUST_BIN 指定
+ RUST_BIN = Path(os.environ.get("STS2_RUST_BIN", REPO / "rust-engine" / "target" / "release" / "sts2-serve"))
+ ENGINES = ("csharp", "rust")
+@@ -37,8 +41,9 @@ class _Process:
+             cmd, env = [str(RUST_BIN), "frames"], None
+         else:
+             cmd = [str(DOTNET), str(dll), "serve"]
+-            env = dict(os.environ, DOTNET_ROOT=str(DOTNET.parent), DOTNET_CLI_TELEMETRY_OPTOUT="1",
+-                       DOTNET_TieredPGO="1")
++            env = dict(os.environ, DOTNET_CLI_TELEMETRY_OPTOUT="1", DOTNET_TieredPGO="1")
++            if DOTNET.parent.name == ".dotnet":
++                env["DOTNET_ROOT"] = str(DOTNET.parent)
+         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env, bufsize=0)
+ 
+     def send(self, req: dict) -> None:
+@@ -156,6 +161,34 @@ class VecEnv:
+         self._pending: set[int] = set()
+         self._sel: selectors.BaseSelector | None = None
+         self._failed: dict[int, EngineError] = {}      # 请求发不出去（进程已退出）的，下一次 recv_ready 当作引擎报错返回
++        self._win_async = os.name == "nt"
++        self._ready_q: queue.Queue | None = None
++        self._slot_qs: list[queue.Queue] | None = None
++        self._readers: list[threading.Thread] = []
++
++    def _ensure_win_readers(self) -> None:
++        if self._ready_q is not None:
++            return
++        self._ready_q = queue.Queue()
++        self._slot_qs = [queue.Queue() for _ in range(len(self.envs))]
++
++        def _worker(idx: int, slot_q: queue.Queue, out_q: queue.Queue) -> None:
++            while True:
++                proc = slot_q.get()
++                if proc is None:
++                    return
++                try:
++                    obs = parse(proc.recv())
++                    out_q.put((idx, obs, False))
++                except EngineError as err:
++                    out_q.put((idx, err, proc.p.poll() is not None))
++                except Exception as err:
++                    out_q.put((idx, EngineError(str(err)), proc.p.poll() is not None))
++
++        for idx, sq in enumerate(self._slot_qs):
++            th = threading.Thread(target=_worker, args=(idx, sq, self._ready_q), name=f"sts2-pipe-{idx}", daemon=True)
++            th.start()
++            self._readers.append(th)
+ 
+     def __len__(self) -> int:
+         return len(self.envs)
+@@ -188,6 +221,8 @@ class VecEnv:
+         """向第 i 个进程发请求（{"op": "step", "action": a} 或 reset 请求），不等待结果。"""
+         if req.get("op") == "reset":
+             req = dict(req, labels=self.envs[i].labels)
++        if self._win_async:
++            self._ensure_win_readers()
+         try:
+             self.envs[i]._proc.send(req)
+         except OSError as e:
+@@ -198,6 +233,9 @@ class VecEnv:
+             else:
+                 self.envs[i] = Sts2Env(*self._args)
+             self._failed[i] = EngineError(f"引擎进程已退出，请求发不出去（{type(e).__name__}）")
++        else:
++            if self._win_async and self._slot_qs is not None:
++                self._slot_qs[i].put(self.envs[i]._proc)
+         self._pending.add(i)
+ 
+     def send_step(self, i: int, action: int) -> None:
+@@ -215,6 +253,27 @@ class VecEnv:
+                 self._pending.discard(i)
+             if out:
+                 return out
++        if self._win_async:
++            self._ensure_win_readers()
++            assert self._ready_q is not None
++            items: list[tuple[int, Obs | EngineError, bool]] = []
++            try:
++                items.append(self._ready_q.get(timeout=timeout))
++            except queue.Empty:
++                return []
++            while True:
++                try:
++                    items.append(self._ready_q.get_nowait())
++                except queue.Empty:
++                    break
++            out = []
++            for i, res, exited in items:
++                if exited:
++                    self.envs[i] = Sts2Env(*self._args)
++                if i in self._pending:
++                    self._pending.discard(i)
++                    out.append((i, res))
++            return out
+         if self._sel is None:
+             self._sel = selectors.DefaultSelector()
+             for i, e in enumerate(self.envs):
+@@ -233,15 +292,20 @@ class VecEnv:
+         return out
+ 
+     def _respawn(self, i: int) -> None:
+-        self._sel.unregister(self.envs[i]._proc.p.stdout)
++        if self._sel is not None:
++            self._sel.unregister(self.envs[i]._proc.p.stdout)
+         self.envs[i] = Sts2Env(*self._args)
+-        self._sel.register(self.envs[i]._proc.p.stdout, selectors.EVENT_READ, i)
++        if self._sel is not None:
++            self._sel.register(self.envs[i]._proc.p.stdout, selectors.EVENT_READ, i)
+ 
+     @property
+     def pending(self) -> set[int]:
+         return self._pending
+ 
+     def close(self) -> None:
++        if self._slot_qs is not None:
++            for sq in self._slot_qs:
++                sq.put(None)
+         if self._sel is not None:
+             self._sel.close()
+         for e in self.envs:
+diff --git a/game-v0.114.0/python/sts2rl/actor.py b/game-v0.114.0/python/sts2rl/actor.py
+index cdb4ca2039fb3e91f4ed961634a5a2d48d3091ba..2bccb095858f1816307cfd583f85105fcef561da 100644
+--- a/game-v0.114.0/python/sts2rl/actor.py
++++ b/game-v0.114.0/python/sts2rl/actor.py
+@@ -136,7 +136,7 @@ def run_actor(rank: int, cfg, weights_path: str, out_queue, stop_event) -> None:
+     _STOP = stop_event
+     # 采集进程（连同之后创建的线程和引擎子进程，nice 按线程继承）让学习进程优先用 CPU：
+     # 4090 机上 CPU 被 256 个引擎占满时，学习一次从 3.05 秒降到 2.89 秒，训练吞吐 +6.5%（2026-10-26 实测）
+-    if cfg.actor_nice:
++    if cfg.actor_nice and hasattr(os, "nice"):
+         try:
+             os.nice(cfg.actor_nice)
+         except OSError:
+@@ -526,7 +526,7 @@ def load_weights(net: PolicyValueNet, path: str, current: int, wp: dict | None =
+         mtime = os.stat(path).st_mtime_ns
+         if current >= 0 and _weights_mtime.get(path) == mtime:
+             return current, -1.0, -1.0
+-        blob = torch.load(path, map_location="cpu", weights_only=False, mmap=True)
++        blob = torch.load(path, map_location="cpu", weights_only=False, mmap=(os.name != "nt"))
+         _weights_mtime[path] = mtime
+     except Exception:
+         return current, -1.0, -1.0    # 还没有或正在被替换，下次再试
+diff --git a/game-v0.114.0/python/sts2rl/config.py b/game-v0.114.0/python/sts2rl/config.py
+index 1e0c8a492c504bd0989ed36554bfad518c71ea75..3def9564498b78e1515ab43f905ebc59ea182720 100644
+--- a/game-v0.114.0/python/sts2rl/config.py
++++ b/game-v0.114.0/python/sts2rl/config.py
+@@ -554,6 +554,7 @@ class TrainConfig:
+     # 其他
+     total_steps: int = 10_000_000
+     save_every: int = 20            # 每隔多少次更新存检查点
++    milestone_every: int = 0        # 每隔多少次更新另存轻量仅权重里程碑到 run_dir/milestones/（0 为关，便于论文画学习曲线）
+     log_every: int = 1
+     seed: int = 0
+     model: ModelConfig = field(default_factory=ModelConfig)
+diff --git a/game-v0.114.0/python/sts2rl/evaluator.py b/game-v0.114.0/python/sts2rl/evaluator.py
+index 6fa70b3a1c19ad5a88711926f9dbb795798e2186..02427aaa51a790557125004e7e020ba07c5e11cb 100644
+--- a/game-v0.114.0/python/sts2rl/evaluator.py
++++ b/game-v0.114.0/python/sts2rl/evaluator.py
+@@ -78,12 +78,14 @@ def _idle_priority(nice: int | None = None) -> None:
+     """本进程（及之后启动的引擎子进程）只在 CPU 空闲时运行；给了 nice 时改为普通调度、降这么多优先级
+     （评测放在协同采集机上时用，那台 CPU 一直被采集占满，空闲调度会排不上，决策记录 198）。"""
+     if nice is not None:
+-        os.nice(nice)
++        if hasattr(os, "nice"):
++            os.nice(nice)
+         return
+     try:
+         os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
+     except (AttributeError, OSError):
+-        os.nice(19)
++        if hasattr(os, "nice"):
++            os.nice(19)
+ 
+ 
+ class _Alive:
+diff --git a/game-v0.114.0/python/sts2rl/resources.py b/game-v0.114.0/python/sts2rl/resources.py
+index 6b15f0a0c9eb9741f83cf88183130990f3ba155f..90b50a9d9f599c63fbc598352fa17a59abc468e6 100644
+--- a/game-v0.114.0/python/sts2rl/resources.py
++++ b/game-v0.114.0/python/sts2rl/resources.py
+@@ -2,6 +2,7 @@
+ from __future__ import annotations
+ 
+ import json
++import os
+ import subprocess
+ import threading
+ import time
+@@ -9,6 +10,8 @@ from pathlib import Path
+ 
+ 
+ def _cpu_times():
++    if os.name == "nt":
++        return 0, 0
+     with open("/proc/stat") as f:
+         v = [int(x) for x in f.readline().split()[1:]]
+     idle = v[3] + v[4]
+@@ -16,6 +19,8 @@ def _cpu_times():
+ 
+ 
+ def _mem():
++    if os.name == "nt":
++        return 0.0, 0.0
+     m = {}
+     with open("/proc/meminfo") as f:
+         for line in f:
+diff --git a/game-v0.114.0/python/sts2rl/train.py b/game-v0.114.0/python/sts2rl/train.py
+index 1cd7e94f4be18cc5964ed39f74216bd909b4cf95..380e3d722080546d5f9336a57d94f61e3241e733 100644
+--- a/game-v0.114.0/python/sts2rl/train.py
++++ b/game-v0.114.0/python/sts2rl/train.py
+@@ -42,12 +42,33 @@ from . import winprob_online as wpo
+ VOCAB_N_LEGACY = 1873
+ 
+ 
++def _replace_with_retry(src: Path, dst: Path, attempts: int = 50, delay: float = 0.05) -> None:
++    """Windows 上目标文件可能被采集进程读取或同步工具短暂占用，重试 os.replace。"""
++    for attempt in range(attempts):
++        try:
++            os.replace(src, dst)
++            return
++        except PermissionError:
++            if attempt == attempts - 1:
++                raise
++            time.sleep(delay)
++
++
+ def publish(net, path: Path, version: int, progress: float, shaping: float = 0.0, extra: dict | None = None) -> None:
+     """extra：随权重一起发给采集进程的其他内容（胜率势能的模型与系数，决策记录 189）。"""
+     tmp = path.with_suffix(".tmp")
+     torch.save({"version": version, "progress": progress, "shaping": shaping,
+                 "state": {k: v.detach().cpu() for k, v in net.state_dict().items()}, **(extra or {})}, tmp)
+-    os.replace(tmp, path)
++    try:
++        _replace_with_retry(tmp, path)
++    except PermissionError:
++        if not path.exists():
++            raise
++        print(f"警告：第 {version} 版权重发布时 {path} 被占用，跳过本次发布", flush=True)
++        try:
++            tmp.unlink()
++        except OSError:
++            pass
+ 
+ 
+ def gae(values: np.ndarray, rewards: np.ndarray, gamma: float, lam: float, cut: np.ndarray | None = None, boot: float = 0.0,
+@@ -442,7 +463,7 @@ def save_checkpoint(path: Path, net, opt, cfg, version: int, progress: float, to
+                 "content_names": list(getattr(net, "content_names", ())), "catalog_version": CATALOG_VERSION,
+                 "opt": opt.adam_state_dict() if hasattr(opt, "adam_state_dict") else opt.state_dict(),     # 免调度时存成普通 Adam 也能载入的样子
+                 "config": cfg.to_dict(), **(extra or {})}, tmp)
+-    os.replace(tmp, path)
++    _replace_with_retry(tmp, path)
+ 
+ 
+ def params_finite(net) -> bool:
+@@ -1677,6 +1698,25 @@ def main(argv=None):
+                                                                             "explore_td", "explore_runs", "lag_split", "rank_lag", "cur", "macro_eff", "macro_diag", "boss_deck", "health")), flush=True)
+             if version % cfg.save_every == 0:
+                 save_checkpoint(ckpt, net, opt, cfg, version, progress, total_steps, phi_steps, vocab_n, ck_extra())
++            if cfg.milestone_every > 0 and version % cfg.milestone_every == 0 and params_finite(net):
++                mdir = run_dir / "milestones"
++                mdir.mkdir(parents=True, exist_ok=True)
++                mpath = mdir / f"v{version:06d}.pt"
++                mtmp = mpath.with_suffix(".tmp")
++                mblob = {
++                    "version": version,
++                    "total_steps": total_steps,
++                    "obs_format": format_for(cfg.character),
++                    "catalog_version": CATALOG_VERSION,
++                    "vocab_n": vocab_n,
++                    "content_names": list(getattr(net, "content_names", ())),
++                    "config": cfg.to_dict(),
++                    "state": {k: v.detach().cpu() for k, v in net.state_dict().items()},
++                }
++                if ema is not None:
++                    mblob["ema_state"] = ema_state()
++                torch.save(mblob, mtmp)
++                _replace_with_retry(mtmp, mpath)
+     finally:
+         stop.set()
+         if value_probe:
+diff --git a/game-v0.114.0/tools/necro_anchor_v1140_win5070ti.json b/game-v0.114.0/tools/necro_anchor_v1140_win5070ti.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b793ea009ae2495fe6535387c59b8574d2392fc
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_anchor_v1140_win5070ti.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/baseline-ad-necro-v1140-a10-s0",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 20,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.5,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 50,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_anchor_v1140_wsl5070ti.json b/game-v0.114.0/tools/necro_anchor_v1140_wsl5070ti.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..be3be52b73e13e6b3d3eb16d24cff482ce12ce29
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_anchor_v1140_wsl5070ti.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/baseline-ad-necro-v1140-a10-s0",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 16,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.5,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 25,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_baseline_v1140_win4070_s1.json b/game-v0.114.0/tools/necro_baseline_v1140_win4070_s1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e8b1b7e3480375120bbbbb014979746a920fe107
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_baseline_v1140_win4070_s1.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/baseline-ad-necro-v1140-a10-s1-4070",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 14,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.5,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 25,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 1,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_broadfirst_v1140_win4070_s1.json b/game-v0.114.0/tools/necro_broadfirst_v1140_win4070_s1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..f66549c116e039e0196fed97aee6cb94e9520e3c
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_broadfirst_v1140_win4070_s1.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/exp-broadfirst-rf75-necro-v1140-a10-s1-4070",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 12,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.75,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 25,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 1,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_broadfirst_v1140_win5070ti.json b/game-v0.114.0/tools/necro_broadfirst_v1140_win5070ti.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..41f6047fdfc6e46fe1150e4543aa5bdc71bdb604
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_broadfirst_v1140_win5070ti.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/exp-broadfirst-rf75-necro-v1140-a10-s0",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 20,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.75,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 25,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_fork_v3050_rf50_win5070ti.json b/game-v0.114.0/tools/necro_fork_v3050_rf50_win5070ti.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7d0414e75e4208fd5123f49e601d2b1ce2a0903d
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_fork_v3050_rf50_win5070ti.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/fork-v3050-rf50-necro-v1140-a10-s0",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 20,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.5,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 130000000,
++  "save_every": 25,
++  "milestone_every": 150,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_fork_v3050_rf75_win4070.json b/game-v0.114.0/tools/necro_fork_v3050_rf75_win4070.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..6d12e4ce6600143b355a6cb1ae990a227c8cbf72
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_fork_v3050_rf75_win4070.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/fork-v3050-rf75-necro-v1140-a10-4070",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 12,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 512,
++  "grad_accum": 8,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.75,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 130000000,
++  "save_every": 25,
++  "milestone_every": 150,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_fork_v3050_rf75_win5070ti.json b/game-v0.114.0/tools/necro_fork_v3050_rf75_win5070ti.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..e91b4a723b597ecff88123e351d741462583dfe6
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_fork_v3050_rf75_win5070ti.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/fork-v3050-rf75-necro-v1140-a10-s0",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 20,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.75,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 130000000,
++  "save_every": 25,
++  "milestone_every": 150,
++  "log_every": 1,
++  "seed": 0,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/necro_win_4070.json b/game-v0.114.0/tools/necro_win_4070.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bda1d7693cee309e3351107dfc45b6808996c06
+--- /dev/null
++++ b/game-v0.114.0/tools/necro_win_4070.json
+@@ -0,0 +1,151 @@
++{
++  "run_dir": "runs/exp-necro-v1140-a10-4070",
++  "character": "NECROBINDER",
++  "actors": 2,
++  "envs_per_actor": 14,
++  "actor_device": "cuda",
++  "learner_device": "cuda",
++  "actor_threads": 1,
++  "learner_threads": 4,
++  "infer_wait_ms": 2.0,
++  "collate_workers": 2,
++  "learner_bf16": true,
++  "learner_fast": true,
++  "learner_compile": false,
++  "gamma": 1.0,
++  "lam": 0.95,
++  "macro_lam": 0.95,
++  "clip": 0.2,
++  "epochs": 2,
++  "batch_steps": 32768,
++  "minibatch": 1024,
++  "grad_accum": 4,
++  "lr": 0.0003,
++  "ema_decay": 0.999,
++  "optimizer": "muon",
++  "muon_lr": 0.0006,
++  "muon_momentum": 0.95,
++  "muon_nesterov": true,
++  "muon_ns_steps": 5,
++  "ent_coef": 0.01,
++  "ent_coef_macro": 0.05,
++  "vf_coef": 0.5,
++  "max_grad_norm": 1.0,
++  "target_kl": 0.03,
++  "max_policy_lag": 6,
++  "queue_steps": 0.75,
++  "local_queue_items": 64,
++  "run_segment_steps": 64,
++  "explore_offpolicy": true,
++  "explore_temper": {
++    "event": [2.0, 0.2],
++    "ancient": [2.0, 0.2]
++  },
++  "win_reward": 1.0,
++  "lose_reward": -1.0,
++  "hp_coef": 1.0,
++  "potion_coef": 0.0,
++  "run_fraction": 0.5,
++  "floor_reward": 0.02,
++  "act1_boss_reward": 0.5,
++  "act2_boss_reward": 0.5,
++  "act3_boss_reward": 1.5,
++  "act3_boss2_reward": 2.0,
++  "victory_reward": 2.0,
++  "run_hp_shaping": 0.0,
++  "combat_dmg_coef": 0.0,
++  "run_potion_coef": 0.0,
++  "elite_potion_free": true,
++  "relic_coef": 0.0,
++  "deck_over_coef": 0.0,
++  "upgrade_coef": 0.0,
++  "rare_coef": 0.0,
++  "potion_discard_penalty": 0.1,
++  "eval_every_s": 0.0,
++  "eval_runs": 0,
++  "eval_combats": 0,
++  "calib_log": false,
++  "exam_every": 0,
++  "card_log_every": 25,
++  "progress_init": 0.0,
++  "progress_step": 0.02,
++  "progress_up_winrate": 0.75,
++  "progress_down_winrate": 0.45,
++  "boss_fraction": 0.2,
++  "boss_win_bonus": 0.5,
++  "boss_act_probs": [0.35, 0.55, 0.1],
++  "boss_dmg_coef": 0.5,
++  "boss_real_share": [0.75, 0.75, 1.0],
++  "act1_fraction": 0.08,
++  "act1_elite_share": 0.5,
++  "act2_fraction": 0.47,
++  "act2_elite_share": 0.574,
++  "act3_fraction": 0.1,
++  "act3_elite_share": 0.4,
++  "mix_fraction": 0.15,
++  "mix_elite_share": 0.4,
++  "snapshot_pool": 256,
++  "second_boss_share": 0.3,
++  "boss_chain_share": 1.0,
++  "boss_loss_power": 2.0,
++  "boss_pq_weight": true,
++  "solver_share": 0.0,
++  "solver_export_every_s": [0.0, 0.0, 0.0],
++  "route_summary": true,
++  "engine": "csharp",
++  "room_log": 0.0,
++  "phi_coef": 0.0,
++  "phi_detach": true,
++  "combat_fight_boot": true,
++  "combat_fight_boot_map": true,
++  "combat_fight_center": true,
++  "hl_coef": 0.1,
++  "hl_scalar_full": true,
++  "head_own_clip": true,
++  "aux_coef": 0.25,
++  "aux_hp_w": 4.0,
++  "value_probe": false,
++  "bridge_port": 0,
++  "loop_cut": true,
++  "stall_turns": 8,
++  "eval_stall_turns": 20,
++  "long_keep_steps": 1000,
++  "max_steps_run": 20000,
++  "max_steps_combat": 1000,
++  "max_steps_fight": 1000,
++  "eval_time_cap": 1800.0,
++  "total_steps": 100000000,
++  "save_every": 50,
++  "milestone_every": 300,
++  "log_every": 1,
++  "seed": 1,
++  "model": {
++    "vocab_size": 4096,
++    "d": 256,
++    "layers": 6,
++    "heads": 4,
++    "ff_mult": 4,
++    "n_kinds": 16,
++    "n_zones": 19,
++    "n_actions": 32,
++    "n_decisions": 16,
++    "n_modes": 4,
++    "content_enchant": true,
++    "content_upgrade": true,
++    "obs_v16": true,
++    "obs_v17": true,
++    "obs_v18": true,
++    "obs_v19": true,
++    "obs_v26": true,
++    "obs_v27": true,
++    "future_content": true,
++    "value_hl": true,
++    "hl_detach": false,
++    "combat_aux": true,
++    "macro_attend": false,
++    "future_head": true
++  },
++  "fh_coef": 0.05,
++  "fh_h": 12,
++  "fh_lr": 0.0001
++}
+diff --git a/game-v0.114.0/tools/win_bench.py b/game-v0.114.0/tools/win_bench.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..50e2e8d7ab7b0dfe746a587ff432541b01f9439b
+--- /dev/null
++++ b/game-v0.114.0/tools/win_bench.py
+@@ -0,0 +1,345 @@
++"""Three-tier native Windows throughput benchmark for AlphaDefect on v0.113.1.
++
++Tiers (all using persistent Sts2Headless.dll + binary obs frames):
++  1. collect : Pure headless collection (async VecEnv, random legal actions, snapshots on)
++  2. infer   : Async VecEnv + batched PolicyValueNet inference on GPU/CPU
++  3. ppo     : End-to-end multi-actor PPO training (runs sts2rl.train for a short step budget)
++
++Example (run after S6 completes):
++  $env:PYTHONPATH = (Resolve-Path 'artifacts/ppo-cuda').Path
++  & $py -u external/AlphaDefect-Public/tools/win_bench.py --tier collect --envs 16 --seconds 20
++  & $py -u external/AlphaDefect-Public/tools/win_bench.py --tier infer   --envs 16 --seconds 20 --device cuda
++  & $py -u external/AlphaDefect-Public/tools/win_bench.py --tier ppo     --actors 2 --envs-per-actor 12 --total-steps 65536
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import subprocess
++import sys
++import tempfile
++import time
++from pathlib import Path
++
++REPO = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO / "python"))
++
++import numpy as np  # noqa: E402
++import torch  # noqa: E402
++from sts2env.env import DEFAULT_DLL, DOTNET, EngineError, VecEnv  # noqa: E402
++from sts2env.protocol import format_for  # noqa: E402
++from sts2rl.features import Ragged, collate_ragged  # noqa: E402
++from sts2rl.model import ModelConfig, PolicyValueNet  # noqa: E402
++
++
++def _make_reset(character: str, asc: int, seed: str, obs_format: int, snapshots: bool) -> dict:
++    return {
++        "op": "reset",
++        "mode": "run",
++        "character": character,
++        "ascension": asc,
++        "seed": seed,
++        "snapshots": snapshots,
++        "obs_format": obs_format,
++        "loop_cut": True,
++        "stall_turns": 20,
++    }
++
++
++def bench_collect(args: argparse.Namespace) -> dict:
++    fmt = args.obs_format or format_for(args.character)
++    rng = np.random.default_rng(12345)
++    seed_seq = 0
++    decisions = 0
++    runs_done = 0
++    snaps = 0
++    errors = 0
++
++    with VecEnv(args.envs, dll=args.dll) as vec:
++        for i in range(args.envs):
++            seed_seq += 1
++            vec.send(i, _make_reset(args.character, args.asc, f"WB{seed_seq}", fmt, True))
++        # Warmup: wait for initial resets so JIT/startup is separated from steady-state rate
++        warmed = 0
++        while warmed < args.envs:
++            for i, obs in vec.recv_ready(timeout=60.0):
++                if isinstance(obs, Exception):
++                    errors += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WB{seed_seq}", fmt, True))
++                else:
++                    warmed += 1
++                    vec.send_step(i, int(rng.integers(0, max(1, obs.num_actions))))
++
++        t0 = time.perf_counter()
++        deadline = t0 + args.seconds
++        t_wait = 0.0
++        batches = 0
++        while time.perf_counter() < deadline:
++            tw = time.perf_counter()
++            ready = vec.recv_ready(timeout=10.0)
++            t_wait += time.perf_counter() - tw
++            if not ready:
++                continue
++            batches += 1
++            for i, obs in ready:
++                if isinstance(obs, Exception):
++                    errors += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WB{seed_seq}", fmt, True))
++                    continue
++                if obs.extra and obs.extra.get("snapshot"):
++                    snaps += 1
++                if obs.done or obs.num_actions <= 0:
++                    runs_done += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WB{seed_seq}", fmt, True))
++                else:
++                    decisions += 1
++                    vec.send_step(i, int(rng.integers(0, obs.num_actions)))
++        dt = time.perf_counter() - t0
++
++    return {
++        "tier": "collect",
++        "character": args.character,
++        "ascension": args.asc,
++        "obs_format": fmt,
++        "envs": args.envs,
++        "seconds": round(dt, 2),
++        "decisions": decisions,
++        "decisions_per_sec": round(decisions / max(dt, 1e-6), 1),
++        "runs_completed": runs_done,
++        "snapshots_captured": snaps,
++        "avg_ready_batch": round(decisions / max(1, batches), 2),
++        "wait_share": round(t_wait / max(dt, 1e-6), 3),
++        "errors": errors,
++    }
++
++
++def _necro_model_cfg() -> ModelConfig:
++    base_path = REPO / "tools" / "remote" / "necro" / "train_config.json"
++    if base_path.exists():
++        raw = json.loads(base_path.read_text(encoding="utf-8"))
++        return ModelConfig(**raw["model"])
++    return ModelConfig(d=256, layers=6, heads=4, ff_mult=4)
++
++
++def bench_infer(args: argparse.Namespace) -> dict:
++    fmt = args.obs_format or format_for(args.character)
++    device = torch.device(args.device)
++    cfg = _necro_model_cfg()
++    net = PolicyValueNet(cfg).to(device).eval()
++    net.infer_ready()
++    use_bf16 = device.type == "cuda" and not args.fp32
++    rng = np.random.default_rng(12345)
++
++    seed_seq = 0
++    decisions = 0
++    runs_done = 0
++    errors = 0
++    t_wait = 0.0
++    t_collate = 0.0
++    t_fwd = 0.0
++    fwd_batches = 0
++    fwd_rows = 0
++
++    with VecEnv(args.envs, dll=args.dll) as vec:
++        for i in range(args.envs):
++            seed_seq += 1
++            vec.send(i, _make_reset(args.character, args.asc, f"WI{seed_seq}", fmt, True))
++        # Warmup resets + 1 forward pass
++        warm_obs = []
++        while len(warm_obs) < args.envs:
++            for i, obs in vec.recv_ready(timeout=60.0):
++                if isinstance(obs, Exception):
++                    errors += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WI{seed_seq}", fmt, True))
++                else:
++                    warm_obs.append((i, obs))
++        with torch.inference_mode(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_bf16):
++            b0 = collate_ragged(Ragged.from_obs([o for _, o in warm_obs])).to(device)
++            net.forward_infer(b0)
++        for i, obs in warm_obs:
++            vec.send_step(i, int(rng.integers(0, max(1, obs.num_actions))))
++
++        t0 = time.perf_counter()
++        deadline = t0 + args.seconds
++        min_batch = max(1, min(args.envs // 2, args.min_batch))
++        wait_s = args.wait_ms / 1000.0
++
++        while time.perf_counter() < deadline:
++            tw = time.perf_counter()
++            ready = vec.recv_ready(timeout=10.0)
++            batch_items = list(ready)
++            if batch_items and len(batch_items) < min_batch and wait_s > 0:
++                t_end = time.perf_counter() + wait_s
++                while len(batch_items) < min_batch and time.perf_counter() < t_end and vec.pending:
++                    rem = max(0.0, t_end - time.perf_counter())
++                    more = vec.recv_ready(timeout=rem)
++                    if not more:
++                        break
++                    batch_items.extend(more)
++            t_wait += time.perf_counter() - tw
++
++            live_idx = []
++            live_obs = []
++            for i, obs in batch_items:
++                if isinstance(obs, Exception):
++                    errors += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WI{seed_seq}", fmt, True))
++                    continue
++                if obs.done or obs.num_actions <= 0:
++                    runs_done += 1
++                    seed_seq += 1
++                    vec.send(i, _make_reset(args.character, args.asc, f"WI{seed_seq}", fmt, True))
++                    continue
++                if obs.num_actions == 1:
++                    decisions += 1
++                    vec.send_step(i, 0)
++                    continue
++                live_idx.append(i)
++                live_obs.append(obs)
++
++            if not live_obs:
++                continue
++
++            tc = time.perf_counter()
++            b = collate_ragged(Ragged.from_obs(live_obs))
++            t_collate += time.perf_counter() - tc
++
++            tf = time.perf_counter()
++            with torch.inference_mode(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_bf16):
++                logits, _ = net.forward_infer(b.to(device))
++                acts = logits.argmax(dim=-1).cpu().numpy()
++            t_fwd += time.perf_counter() - tf
++            fwd_batches += 1
++            fwd_rows += len(live_obs)
++
++            for i, a in zip(live_idx, acts):
++                decisions += 1
++                vec.send_step(i, int(a))
++
++        dt = time.perf_counter() - t0
++
++    return {
++        "tier": "infer",
++        "character": args.character,
++        "ascension": args.asc,
++        "obs_format": fmt,
++        "device": str(device),
++        "bf16": use_bf16,
++        "envs": args.envs,
++        "seconds": round(dt, 2),
++        "decisions": decisions,
++        "decisions_per_sec": round(decisions / max(dt, 1e-6), 1),
++        "runs_completed": runs_done,
++        "avg_infer_batch": round(fwd_rows / max(1, fwd_batches), 2),
++        "wait_share": round(t_wait / max(dt, 1e-6), 3),
++        "collate_share": round(t_collate / max(dt, 1e-6), 3),
++        "fwd_share": round(t_fwd / max(dt, 1e-6), 3),
++        "errors": errors,
++    }
++
++
++def bench_ppo(args: argparse.Namespace) -> dict:
++    run_dir = Path(args.run_dir) if args.run_dir else Path(tempfile.mkdtemp(prefix="ad_win_ppo_bench_"))
++    run_dir.mkdir(parents=True, exist_ok=True)
++    base_cfg_path = REPO / "tools" / "remote" / "necro" / "train_config.json"
++    cfg = json.loads(base_cfg_path.read_text(encoding="utf-8"))
++    cfg.update({
++        "run_dir": str(run_dir),
++        "character": args.character,
++        "actors": args.actors,
++        "envs_per_actor": args.envs_per_actor,
++        "actor_device": args.device,
++        "learner_device": args.device,
++        "learner_compile": False if os.name == "nt" else bool(cfg.get("learner_compile", False)),
++        "batch_steps": args.batch_steps,
++        "minibatch": args.minibatch,
++        "grad_accum": max(1, args.grad_accum),
++        "total_steps": args.total_steps,
++        "eval_every_s": 0.0,
++        "eval_runs": 0,
++        "eval_combats": 0,
++        "save_every": 999999,
++        "log_every": 1,
++    })
++    cfg_path = run_dir / "bench_config.json"
++    cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
++
++    env = dict(os.environ)
++    py_path = str(REPO / "python")
++    env["PYTHONPATH"] = py_path + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
++    cmd = [sys.executable, "-u", "-m", "sts2rl.train", "--config", str(cfg_path)]
++    t0 = time.perf_counter()
++    proc = subprocess.run(cmd, env=env)
++    dt = time.perf_counter() - t0
++    metrics_path = run_dir / "log.jsonl"
++    recs = []
++    if metrics_path.exists():
++        recs = [json.loads(ln) for ln in metrics_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
++    last = recs[-1] if recs else None
++    steady_sps = None
++    if len(recs) >= 2:
++        t_span = recs[-1].get("time", 0.0) - recs[0].get("time", 0.0)
++        s_span = recs[-1].get("total_steps", 0) - recs[0].get("total_steps", 0)
++        if t_span > 0:
++            steady_sps = round(s_span / t_span, 1)
++    return {
++        "tier": "ppo",
++        "exit_code": proc.returncode,
++        "run_dir": str(run_dir),
++        "actors": args.actors,
++        "envs_per_actor": args.envs_per_actor,
++        "total_envs": args.actors * args.envs_per_actor,
++        "batch_steps": args.batch_steps,
++        "total_steps_target": args.total_steps,
++        "updates_completed": len(recs),
++        "wall_seconds": round(dt, 2),
++        "overall_decisions_per_sec": round((last.get("total_steps", 0) if last else 0) / max(dt, 1e-6), 1),
++        "steady_decisions_per_sec": steady_sps,
++        "last_t_collect": last.get("t_collect") if last else None,
++        "last_t_learn": last.get("t_learn") if last else None,
++        "last_t_prep": last.get("t_prep") if last else None,
++        "last_t_ppo": last.get("t_ppo") if last else None,
++    }
++
++
++def main() -> None:
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument("--tier", choices=("collect", "infer", "ppo"), required=True)
++    p.add_argument("--character", default="NECROBINDER")
++    p.add_argument("--asc", type=int, default=0)
++    p.add_argument("--obs-format", type=int, default=0)
++    p.add_argument("--dll", type=Path, default=DEFAULT_DLL)
++    p.add_argument("--envs", type=int, default=16)
++    p.add_argument("--seconds", type=float, default=20.0)
++    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
++    p.add_argument("--fp32", action="store_true")
++    p.add_argument("--min-batch", type=int, default=8)
++    p.add_argument("--wait-ms", type=float, default=2.0)
++    # Tier 3 (PPO) options
++    p.add_argument("--actors", type=int, default=2)
++    p.add_argument("--envs-per-actor", type=int, default=12)
++    p.add_argument("--batch-steps", type=int, default=16384)
++    p.add_argument("--minibatch", type=int, default=1024)
++    p.add_argument("--grad-accum", type=int, default=1)
++    p.add_argument("--total-steps", type=int, default=65536)
++    p.add_argument("--run-dir", type=str, default="")
++    args = p.parse_args()
++
++    print(f"DOTNET={DOTNET} | DLL={args.dll}", flush=True)
++    if args.tier == "collect":
++        res = bench_collect(args)
++    elif args.tier == "infer":
++        res = bench_infer(args)
++    else:
++        res = bench_ppo(args)
++    print(json.dumps(res, ensure_ascii=False, indent=2), flush=True)
++
++
++if __name__ == "__main__":
++    main()

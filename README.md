@@ -9,7 +9,7 @@
 | [当前模型与可选动作](docs/current-policy.md) | 标准模式的动作、观测，以及继续训练后的首战结果 |
 | [标准 A0 战斗训练（历史对照）](docs/combat-training.md) | 旧版联合训练、难战课程、Steam 对齐 PPO v1 与有界搜索器 |
 | [自主训练路线与构筑](docs/strategy-training.md) | 三组对照、每阶段轮数、PowerShell 启动与续训 |
-| [实机接管 Mod](docs/live-pilot.md) | 用 F7 随时接管当前标准骨头人对局，并查看模型打分 |
+| [实机接管与诊断 Mod（v0.114.0）](docs/live-pilot.md) | `NecroPilot v0.2.1`：F7 自动接管 / F6 一键记录异常快照，直接复用 AlphaDefect 原生观测与 `.pt` 检查点 |
 | [骨头人训练设计](docs/necrobinder.md) | 玩家可见特征、角色机制、PPO 课程和实机验收 |
 | [游戏版本迁移](docs/versions-and-modes.md) | 标准模式的新构建验证和历史模式资料 |
 | [GPT‑6.2 Sol 交接提示词](docs/sol-handoff.md) | 可独立执行的后续开发与验证任务，有明确的预算和停止条件 |

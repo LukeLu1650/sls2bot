@@ -1,4 +1,5 @@
 using Godot;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
 
@@ -10,18 +11,44 @@ internal static class SelectionControls
     {
         return screen switch
         {
-            NDeckUpgradeSelectScreen => FindPreview(screen, "Confirm", "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer"),
-            NDeckEnchantSelectScreen => FindPreview(screen, "Confirm", "%EnchantSinglePreviewContainer", "%EnchantMultiPreviewContainer"),
-            NDeckTransformSelectScreen => FindPreview(screen, "Confirm", "%PreviewContainer"),
-            NDeckCardSelectScreen => FindPreview(screen, "%PreviewConfirm", "%PreviewContainer"),
+            NDeckUpgradeSelectScreen =>
+                FieldPreview(screen, "_upgradeSinglePreviewContainer", "_singlePreviewConfirmButton") is { IsOpen: true } s ? s :
+                FieldPreview(screen, "_upgradeMultiPreviewContainer", "_multiPreviewConfirmButton") is { IsOpen: true } m ? m :
+                FindPreview(screen, "Confirm", "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer"),
+
+            NDeckEnchantSelectScreen =>
+                FieldPreview(screen, "_enchantSinglePreviewContainer", "_singlePreviewConfirmButton") is { IsOpen: true } s ? s :
+                FieldPreview(screen, "_enchantMultiPreviewContainer", "_multiPreviewConfirmButton") is { IsOpen: true } m ? m :
+                FindPreview(screen, "Confirm", "%EnchantSinglePreviewContainer", "%EnchantMultiPreviewContainer"),
+
+            NDeckTransformSelectScreen =>
+                FieldPreview(screen, "_previewContainer", "_previewConfirmButton") is { IsOpen: true } p ? p :
+                FindPreview(screen, "Confirm", "%PreviewContainer"),
+
+            NDeckCardSelectScreen =>
+                FieldPreview(screen, "_previewContainer", "_previewConfirmButton") is { IsOpen: true } p ? p :
+                FindPreview(screen, "%PreviewConfirm", "%PreviewContainer"),
+
             _ => (false, null),
         };
     }
 
     internal static NConfirmButton? GridConfirm(NCardGridSelectionScreen screen)
     {
+        if (AccessTools.Field(screen.GetType(), "_confirmButton")?.GetValue(screen) is NConfirmButton fieldBtn)
+            return Ready(fieldBtn);
         string path = screen is NDeckEnchantSelectScreen or NDeckTransformSelectScreen ? "Confirm" : "%Confirm";
         return Ready(screen.GetNodeOrNull<NConfirmButton>(path));
+    }
+
+    private static (bool IsOpen, NConfirmButton? Button) FieldPreview(
+        NCardGridSelectionScreen screen, string containerField, string buttonField)
+    {
+        var t = screen.GetType();
+        if (AccessTools.Field(t, containerField)?.GetValue(screen) is not Control container || !container.IsVisibleInTree())
+            return (false, null);
+        var btn = AccessTools.Field(t, buttonField)?.GetValue(screen) as NConfirmButton;
+        return (true, Ready(btn));
     }
 
     private static (bool IsOpen, NConfirmButton? Button) FindPreview(

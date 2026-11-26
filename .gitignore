@@ -2,6 +2,9 @@
 /artifacts/
 /runs/
 /.venv/
+/.vscode/
+/2611.31076v1.pdf
+/docs/powershellcode
 __pycache__/
 /mod/bin/
 /mod/obj/
