@@ -1,4 +1,5 @@
-# 骨头人（Necrobinder）RL 协作训练指南 · RTX 4070 游戏本（8 GB 显存 / 32 GB 内存）
+# Necrobinder RL 协作训练指南 · RTX 4070 游戏本（8 GB 显存 / 32 GB 内存）
+# 附带一个可以接入模型的ai mod,可以玩玩
 
 > **当前阶段（方案 C · 从 1 亿步 `v3050` 直接分叉续训 `+3,000 万步`）**
 > 本指南面向 **Windows + RTX 4070 游戏本（8 GB 显存 / 32 GB 内存）**，运行 **`v0.114.0` 原生 Windows 高吞吐常驻引擎栈**（Ascension 10 · Necrobinder · 纯 RL 零真人数据、严格 No-SL）。
