@@ -1,4 +1,4 @@
-"""Build and package NecroPilot v0.2.0 for Slay the Spire 2 v0.114.0 (AlphaDefect backend)."""
+"""Build and package NecroPilot for Slay the Spire 2 v0.114.0."""
 from __future__ import annotations
 
 import argparse
@@ -56,6 +56,26 @@ def build_dll(game: Path | None = None) -> Path:
     return dll
 
 
+def build_shadow(output: Path) -> None:
+    upstream = AD_ROOT.parent
+    patch = ROOT / "patches/necropilot-room-save.patch"
+    apply = ["git", "-C", str(upstream), "apply"]
+    if (upstream / "UPSTREAM_COMMIT").is_file() and not (upstream / ".git").exists():
+        apply = [
+            "git", "-C", str(upstream), f"--git-dir={upstream.parent / 'alphadefect-upstream.git'}",
+            f"--work-tree={upstream}", "apply",
+        ]
+    if subprocess.run([*apply, "--reverse", "--check", str(patch)], capture_output=True).returncode != 0:
+        subprocess.run([*apply, "--check", str(patch)], check=True)
+        subprocess.run([*apply, str(patch)], check=True)
+    game_data = ROOT / "artifacts/alphadefect/game/v0.114.0"
+    subprocess.run([
+        "dotnet", "build", str(AD_ROOT / "engine/Sts2Headless"),
+        "-c", "Release", "--disable-build-servers", "-nologo", "-v:q",
+        f"-p:Sts2GameDir={game_data}", "-o", str(output),
+    ], check=True)
+
+
 def make_config(checkpoint: Path, *, python_exe: str, device: str, use_ema: bool,
                 character_filter: str | None, action_delay_ms: int) -> dict:
     py_paths = [
@@ -71,14 +91,21 @@ def make_config(checkpoint: Path, *, python_exe: str, device: str, use_ema: bool
         "character_filter": character_filter,
         "action_delay_ms": action_delay_ms,
         "bug_report_dir": str((ROOT / "runs/live-bug-reports").resolve()),
+        "sl_headless_dll": "shadow/Sts2Headless.dll",
+        "sl_seconds": 5.0,
     }
 
 
-def stage_folder(dest: Path, dll: Path, cfg: dict) -> None:
+def stage_folder(dest: Path, dll: Path, shadow: Path, cfg: dict) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(dll, dest / "NecroPilot.dll")
     shutil.copy2(ROOT / "live/NecroPilot.json", dest / "NecroPilot.json")
     shutil.copy2(ROOT / "scripts/live_policy.py", dest / "live_policy.py")
+    shutil.copy2(ROOT / "scripts/live_combat_sl.py", dest / "live_combat_sl.py")
+    (dest / "shadow").mkdir(exist_ok=True)
+    for suffix in (".dll", ".runtimeconfig.json", ".deps.json"):
+        name = f"Sts2Headless{suffix}"
+        shutil.copy2(shadow / name, dest / "shadow" / name)
     shutil.copy2(AD_CATALOG / "vocab.txt", dest / "vocab.txt")
     shutil.copy2(AD_CATALOG / "aliases.txt", dest / "aliases.txt")
     shutil.copy2(AD_CATALOG / "no_downside_relics.txt", dest / "no_downside_relics.txt")
@@ -104,20 +131,22 @@ def package(game: Path, checkpoint: Path, *, out_zip: Path | None, stage_dir: Pa
         action_delay_ms=action_delay_ms,
     )
 
-    if stage_dir is not None:
-        stage_folder(stage_dir, dll, cfg)
-        print(f"Staged NecroPilot folder: {stage_dir.resolve()}")
-
-    if out_zip is not None:
-        out_zip.parent.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(prefix="necropilot-zip-") as tmp:
-            root = Path(tmp) / "NecroPilot"
-            stage_folder(root, dll, cfg)
+    with TemporaryDirectory(prefix="necropilot-package-") as tmp:
+        root = Path(tmp)
+        shadow = root / "shadow"
+        build_shadow(shadow)
+        if stage_dir is not None:
+            stage_folder(stage_dir, dll, shadow, cfg)
+            print(f"Staged NecroPilot folder: {stage_dir.resolve()}")
+        if out_zip is not None:
+            out_zip.parent.mkdir(parents=True, exist_ok=True)
+            stage = root / "NecroPilot"
+            stage_folder(stage, dll, shadow, cfg)
             with ZipFile(out_zip, "w", ZIP_DEFLATED) as archive:
-                for p in sorted(root.rglob("*")):
+                for p in sorted(stage.rglob("*")):
                     if p.is_file():
-                        archive.write(p, "NecroPilot/" + p.relative_to(root).as_posix())
-        print(f"Packaged ZIP: {out_zip.resolve()}")
+                        archive.write(p, "NecroPilot/" + p.relative_to(stage).as_posix())
+            print(f"Packaged ZIP: {out_zip.resolve()}")
 
 
 def main(argv=None) -> int:
@@ -134,7 +163,7 @@ def main(argv=None) -> int:
     parser.add_argument("--skip-game-check", action="store_true", help="Compile against artifacts/alphadefect/game/v0.114.0")
     args = parser.parse_args(argv)
     if args.out is None and args.stage is None:
-        args.out = ROOT / "artifacts/NecroPilot-v0.2.0-v1140.zip"
+        args.out = ROOT / "artifacts/NecroPilot-v0.2.2-v1140.zip"
     package(
         args.game.resolve(),
         args.checkpoint.resolve(),

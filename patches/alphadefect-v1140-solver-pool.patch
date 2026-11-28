@@ -1,0 +1,49 @@
+diff --git a/game-v0.114.0/python/sts2rl/solver_pool.py b/game-v0.114.0/python/sts2rl/solver_pool.py
+index fc840d2..008fe17 100644
+--- a/game-v0.114.0/python/sts2rl/solver_pool.py
++++ b/game-v0.114.0/python/sts2rl/solver_pool.py
+@@ -27,8 +27,9 @@ class SolverPool:
+         self.pending.mkdir(parents=True, exist_ok=True)
+         self.labeled = self.dir / "labeled.jsonl"
+         self.offset = 0
+-        self.items = [deque(maxlen=cfg.solver_pool) for _ in range(3)]   # 各幕 Boss，能赢的局面
++        self.items = [deque(maxlen=cfg.solver_pool) for _ in range(3)]   # 各幕 Boss，入选练习池的局面
+         self.by_id: dict[str, dict] = {}
++        self.by_hash: set[str] = set()
+         self.last_export = [0.0, 0.0, 0.0]
+         self.exported = 0
+         # 固定考卷里的局面不拿来练（见 tools/exam_build.py）
+@@ -82,13 +83,20 @@ class SolverPool:
+                 r = json.loads(line)
+             except json.JSONDecodeError:
+                 continue
+-            if r.get("win") and r.get("act") in (0, 1, 2) and r["id"] not in self.by_id and r["id"] not in self.exam_ids:
+-                item = {"id": r["id"], "spec": r["spec"], "end_hp": r.get("end_hp"), "attempts": 0, "wins": 0}
++            admitted = bool(r["pool_eligible"]) if "pool_eligible" in r else bool(r.get("win"))
++            sh = r.get("snap_hash")
++            if admitted and r.get("act") in (0, 1, 2) and r["id"] not in self.by_id and r["id"] not in self.exam_ids and (not sh or sh not in self.by_hash):
++                item = {"id": r["id"], "snap_hash": sh, "spec": r["spec"], "end_hp": r.get("end_hp"), "attempts": 0, "wins": 0}
+                 pool = self.items[r["act"]]
+                 if len(pool) == pool.maxlen:
+-                    self.by_id.pop(pool[0]["id"], None)
++                    ev = pool[0]
++                    self.by_id.pop(ev["id"], None)
++                    if ev.get("snap_hash"):
++                        self.by_hash.discard(ev["snap_hash"])
+                 pool.append(item)
+                 self.by_id[r["id"]] = item
++                if sh:
++                    self.by_hash.add(sh)
+ 
+     def sample(self, act: int, rng: np.random.Generator, counter: int) -> dict | None:
+         """按权重抽一个能赢的局面：模型还没赢过的为 1，赢过 k 次的为 1/(1+2k)；没有则返回 None。"""
+@@ -135,7 +143,8 @@ class LabelStats:
+                         except json.JSONDecodeError:
+                             continue
+                         if r.get("act") in (0, 1, 2):
+-                            self.counts[r["act"]][0] += int(bool(r.get("win")))
++                            admitted = bool(r["pool_eligible"]) if "pool_eligible" in r else bool(r.get("win"))
++                            self.counts[r["act"]][0] += int(admitted)
+                             self.counts[r["act"]][1] += 1
+         except OSError:
+             pass

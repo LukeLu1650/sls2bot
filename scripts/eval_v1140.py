@@ -191,12 +191,12 @@ def resolve_ckpts(specs: list[str]) -> list[Path]:
     return uniq
 
 
-def load_seeds(runs: int, seed_prefix: str, seeds_file: str | None) -> list[str]:
+def load_seeds(runs: int, seed_prefix: str, seeds_file: str | None, seed_start: int = 0) -> list[str]:
     if seeds_file:
         raw = json.loads(Path(seeds_file).read_text(encoding="utf-8"))
         seeds = raw["seeds"] if isinstance(raw, dict) else raw
-        return [str(s) for s in seeds[:runs]]
-    return [f"{seed_prefix}{i:04d}" for i in range(runs)]
+        return [str(s) for s in seeds[seed_start : seed_start + runs]]
+    return [f"{seed_prefix}{i:04d}" for i in range(seed_start, seed_start + runs)]
 
 
 def eval_one_ckpt(ckpt_path: Path, a: argparse.Namespace, seeds: list[str], out_dir: Path) -> tuple[dict, list[dict]]:
@@ -321,6 +321,7 @@ def main() -> None:
     ap.add_argument("--asc", type=int, default=10)
     ap.add_argument("--weights", choices=("ema", "raw"), default="ema", help="Primary weight source: ema (default) or raw")
     ap.add_argument("--runs", type=int, default=128)
+    ap.add_argument("--seed-start", type=int, default=0, help="Starting index for generated seeds (e.g. 512 -> A10MINE0512..)")
     ap.add_argument("--seed-prefix", default="A10EVAL", help="Use A10EVAL for locked eval; A10MINE for independent Boss-mining")
     ap.add_argument("--seeds-file", default=None, help="Optional JSON seed list file (overrides --seed-prefix)")
     ap.add_argument("--envs", type=int, default=12)
@@ -341,7 +342,7 @@ def main() -> None:
         a.boss_snaps = True
     if a.export_failed_bosses and not a.allow_diag_export:
         pfx = (a.seed_prefix or "").upper()
-        if "EVAL" in pfx or "HOLD" in pfx or "TEST" in pfx:
+        if "EVAL" in pfx or "VAL" in pfx or "HOLD" in pfx or "TEST" in pfx or "CONF" in pfx:
             ap.error(
                 f"Refusing to export Boss snapshots from evaluation seed prefix '{a.seed_prefix}' "
                 "to prevent eval-set leakage into SolverPool! Use --seed-prefix A10MINE for training-side mining, "
@@ -350,7 +351,7 @@ def main() -> None:
 
     torch.set_num_threads(2)
     ckpts = resolve_ckpts(a.ckpts)
-    seeds = load_seeds(a.runs, a.seed_prefix, a.seeds_file)
+    seeds = load_seeds(a.runs, a.seed_prefix, a.seeds_file, seed_start=a.seed_start)
     out_dir = Path(a.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 

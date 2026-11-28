@@ -1,13 +1,17 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Godot;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Multiplayer.Replay;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Saves;
 using Sts2Headless;
 using Environment = System.Environment;
 
@@ -17,7 +21,13 @@ namespace NecroPilot;
 public static class Live
 {
     private static bool _enabled;
-    private static bool _f7Down, _f6Down;
+    private static bool _f7Down, _f6Down, _f8Down;
+    private static bool _slEnabled;
+    private static int _slGeneration, _inferSlGeneration;
+    private static object? _slCombat;
+    private static readonly Queue<PlanStep> SlPlan = new();
+    private static readonly FieldInfo? ReplayField = typeof(CombatReplayWriter)
+        .GetField("_replay", BindingFlags.Instance | BindingFlags.NonPublic);
     internal static int Generation { get; private set; }
     internal static bool Active(int generation) => _enabled && generation == Generation;
 
@@ -33,6 +43,7 @@ public static class Live
     private static Task<string?>? _inferTask;
     private static string? _inferFrameKey;
     private static long _inferStartedMs;
+    private static int _inferTimeoutMs = 8000;
     private static Task? _actionTask;
     private static long _actionStartedMs;
     private static long _nextPollMs;
@@ -48,6 +59,7 @@ public static class Live
     private static PanelContainer _panel = null!;
     private static Button _pilotBtn = null!;
     private static Button _bugBtn = null!;
+    private static Button _slBtn = null!;
     private static Label _metaLabel = null!;
     private static Label _statusLabel = null!;
     private static Label _valueLabel = null!;
@@ -70,7 +82,7 @@ public static class Live
 
             ((SceneTree)Engine.GetMainLoop()).ProcessFrame += Setup;
             AppDomain.CurrentDomain.ProcessExit += (_, _) => CloseWorker();
-            Log.Info($"[NecroPilot] v0.2.1 initialized (vocab={Vocab.Count}, noDownsideRelics={RewardsFlow.NoDownside.Count}).");
+            Log.Info($"[NecroPilot] v0.2.2 initialized (vocab={Vocab.Count}, noDownsideRelics={RewardsFlow.NoDownside.Count}).");
         }
         catch (Exception ex)
         {
@@ -86,7 +98,7 @@ public static class Live
         {
             BuildHud(tree.Root);
             tree.ProcessFrame += Frame;
-            Log.Info("[NecroPilot] HUD loaded (F7=Pilot ON/OFF, F6=Save Bug Snapshot).");
+            Log.Info("[NecroPilot] HUD loaded (F7=Pilot, F8=Combat SL, F6=Save Bug Snapshot).");
         }
         catch (Exception ex)
         {
@@ -138,6 +150,9 @@ public static class Live
         _bugBtn.Pressed += () => CaptureBugSnapshot("manual_f6");
         row.AddChild(_pilotBtn);
         row.AddChild(_bugBtn);
+        _slBtn = new Button { Text = "SL: OFF [F8]", FocusMode = Control.FocusModeEnum.None };
+        _slBtn.Pressed += ToggleSl;
+        row.AddChild(_slBtn);
         box.AddChild(row);
 
         _metaLabel = MakeLabel("Idle · v0.114.0 AlphaDefect", 12, new Color("#8ef2cc"));
@@ -259,6 +274,7 @@ public static class Live
             CaptureBugSnapshot("auto_" + reason);
 
         _enabled = false;
+        SlPlan.Clear();
         Generation++;
         _pilotBtn.Text = "Pilot: OFF [F7]";
         _statusLabel.Text = reason;
@@ -355,6 +371,22 @@ public static class Live
     private static bool AnyModifierPressed() =>
         Input.IsPhysicalKeyPressed(Key.Ctrl) || Input.IsPhysicalKeyPressed(Key.Alt) || Input.IsPhysicalKeyPressed(Key.Shift);
 
+    private static void ToggleSl()
+    {
+        _slEnabled = !_slEnabled;
+        _slGeneration++;
+        SlPlan.Clear();
+        _slBtn.Text = _slEnabled ? "SL: ON [F8]" : "SL: OFF [F8]";
+    }
+
+    private static string? ReadRoomSave(RunManager manager)
+    {
+        if (ReplayField?.GetValue(manager.CombatReplayWriter) is not CombatReplay replay ||
+            replay.serializableRun is not { } save)
+            return null;
+        return JsonSerializer.Serialize(save, JsonSerializationUtility.GetTypeInfo(save));
+    }
+
     private static void Frame()
     {
         if (_bugToastLabel.Visible && Environment.TickCount64 > _bugToastUntilMs)
@@ -369,6 +401,10 @@ public static class Live
             bool f6 = Input.IsPhysicalKeyPressed(Key.F6);
             if (f6 && !_f6Down) CaptureBugSnapshot("manual_f6");
             _f6Down = f6;
+
+            bool f8 = Input.IsPhysicalKeyPressed(Key.F8);
+            if (f8 && !_f8Down) ToggleSl();
+            _f8Down = f8;
         }
 
         if (!_enabled || Environment.TickCount64 < _nextPollMs) return;
@@ -441,6 +477,10 @@ public static class Live
         }
         _run = run;
 
+        var combat = player.Creature.CombatState;
+        if (!ReferenceEquals(combat, _slCombat))
+            SlPlan.Clear();
+
         if (!string.IsNullOrEmpty(_trainedCharacter) &&
             !string.Equals(_trainedCharacter, player.Character.Id.Entry, StringComparison.OrdinalIgnoreCase))
         {
@@ -473,7 +513,7 @@ public static class Live
 
         if (_inferTask is { IsCompleted: false })
         {
-            if (Environment.TickCount64 - _inferStartedMs > 8000)
+            if (Environment.TickCount64 - _inferStartedMs > _inferTimeoutMs)
                 Stop("Inference timed out", autoDump: true);
             return;
         }
@@ -510,7 +550,9 @@ public static class Live
         var decision = pending.Decision;
         if (decision.Choices.Count == 0) return;
 
-        if (pending.AutoStep || decision.Choices.Count == 1)
+        bool useSl = _slEnabled && combat != null && CombatManager.Instance.IsInProgress &&
+            decision.Kind is DecisionKind.Combat or DecisionKind.CardSelect;
+        if (pending.AutoStep || (!useSl && decision.Choices.Count == 1))
         {
             var only = decision.Choices[0];
             string autoKey = pending.Context + "|" + only.Label + "|" + run.ActFloor + "|" + player.Gold + "|" + player.Creature.CurrentHp;
@@ -525,6 +567,7 @@ public static class Live
             _statusLabel.Text = $"Auto · {only.Label}";
             _scoresLabel.Text = "";
             BugReporter.RecordEvent("auto", $"{pending.Context} -> {only.Label}");
+            LogRewardChoice(run, decision, only, "auto", player.HasOpenPotionSlots);
             ExecuteChoice(pending, only);
             return;
         }
@@ -532,7 +575,7 @@ public static class Live
         byte[] frameBytes;
         try
         {
-            var obs = Observation.Build(_pilot.Session, decision, labels: true);
+            var obs = Observation.Build(_pilot.Session, decision, labels: false);
             frameBytes = obs.Serialize();
         }
         catch (Exception ex)
@@ -557,9 +600,35 @@ public static class Live
 
         if (_inferTask == null)
         {
+            if (useSl && SlPlan.TryPeek(out var planned))
+            {
+                if (PlanMatches(planned, frameBytes, decision.Choices.Count))
+                {
+                    SlPlan.Dequeue();
+                    CommitChoice(pending, decision.Choices[planned.Index], frameKey, "SL");
+                    return;
+                }
+                SlPlan.Clear();
+                BugReporter.RecordEvent("sl", "Action frame mismatch; switched to policy");
+                Log.Info($"[NecroPilot/SL] F{run.TotalFloor} action mismatch; switched to policy");
+            }
             _inferFrameKey = frameKey;
             _inferStartedMs = Environment.TickCount64;
-            string req = JsonSerializer.Serialize(new { type = "infer", frame = Convert.ToBase64String(frameBytes) });
+            _inferSlGeneration = _slGeneration;
+            string? roomSave = null, room = null;
+            if (useSl && decision.Kind == DecisionKind.Combat && !ReferenceEquals(combat, _slCombat))
+            {
+                _slCombat = combat;
+                room = run.CurrentRoom?.RoomType.ToString();
+                if (room is "Monster" or "Elite" or "Boss")
+                {
+                    try { roomSave = ReadRoomSave(manager); }
+                    catch (Exception ex) { BugReporter.RecordEvent("sl", "Room save unavailable: " + ex.Message); }
+                    if (roomSave != null) _statusLabel.Text = "SL · 正在搜索当前战斗";
+                }
+            }
+            string req = JsonSerializer.Serialize(new { type = "infer", frame = Convert.ToBase64String(frameBytes), room_save = roomSave, room });
+            _inferTimeoutMs = roomSave == null ? 8000 : 18000;
             _inferTask = Query(_worker, req);
             return;
         }
@@ -585,6 +654,7 @@ public static class Live
         }
 
         var chosen = decision.Choices[reply.Index];
+        LogRewardChoice(run, decision, chosen, "policy", player.HasOpenPotionSlots, reply.Top);
         _valueLabel.Text = $"Value: {reply.Value:+0.00;-0.00;0.00}   ·   {reply.Ms:F1} ms   ·   {decision.Choices.Count} opts";
         _scoresLabel.Text = string.Join("\n", (reply.Top ?? Array.Empty<TopItem>()).Select((t, rank) =>
         {
@@ -606,9 +676,47 @@ public static class Live
             }).ToArray(),
         });
 
+        if (reply.SlStatus != null)
+        {
+            BugReporter.RecordEvent("sl", reply.SlStatus, new { completed = reply.SlCompleted });
+            Log.Info($"[NecroPilot/SL] F{run.TotalFloor} {reply.SlStatus} completed={reply.SlCompleted} " +
+                $"plan_steps={reply.SlPlan?.Length ?? 0}");
+        }
+        if (useSl && _inferSlGeneration == _slGeneration && reply.SlPlan is { Length: > 0 } plan &&
+            PlanMatches(plan[0], frameBytes, decision.Choices.Count))
+        {
+            foreach (var step in plan.Skip(1)) SlPlan.Enqueue(step);
+            CommitChoice(pending, decision.Choices[plan[0].Index], frameKey, "SL");
+            return;
+        }
+        CommitChoice(pending, chosen, frameKey, "▶");
+    }
+
+    private static bool PlanMatches(PlanStep step, byte[] frame, int choiceCount)
+    {
+        if (step.Index < 0 || step.Index >= choiceCount) return false;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(frame.AsSpan(0, 48));
+        hash.AppendData(frame.AsSpan(60));
+        return step.Guard == Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static void LogRewardChoice(RunState run, Decision decision, Choice chosen, string source,
+        bool openPotionSlot, TopItem[]? top = null)
+    {
+        if (decision.Kind is not (DecisionKind.Rewards or DecisionKind.CardReward)) return;
+        var candidates = string.Join(" | ", decision.Choices.Select((choice, index) => $"{index}:{choice.Label}"));
+        var scores = string.Join(" | ", (top ?? Array.Empty<TopItem>()).Select(t => $"{t.Index}:{t.Prob:P1}"));
+        Log.Info($"[NecroPilot/reward] F{run.TotalFloor} {run.CurrentRoom?.RoomType} {decision.Kind} " +
+            $"source={source} selected={decision.Choices.IndexOf(chosen)}:{chosen.Label} " +
+            $"open_potion_slot={openPotionSlot} candidates=[{candidates}] top=[{scores}]");
+    }
+
+    private static void CommitChoice(LivePilot.Pending pending, Choice chosen, string frameKey, string prefix)
+    {
         _lastFrameKey = frameKey;
         _sameFrameSinceMs = Environment.TickCount64;
-        _statusLabel.Text = $"▶ {chosen.Label}";
+        _statusLabel.Text = $"{prefix} {chosen.Label}";
         ExecuteChoice(pending, chosen);
     }
 
@@ -649,5 +757,9 @@ public static class Live
 
     private sealed record ReadyReply(string Type, string? Checkpoint, int Version, string? Device, bool Ema, string? Character, string? Error);
     private sealed record TopItem(int Index, double Prob, double Logit);
-    private sealed record InferReply(string Type, int Index, double Value, double Ms, TopItem[]? Top, string? Error);
+    private sealed record PlanStep(string Guard, int Index);
+    private sealed record InferReply(string Type, int Index, double Value, double Ms, TopItem[]? Top, string? Error,
+        [property: JsonPropertyName("sl_plan")] PlanStep[]? SlPlan,
+        [property: JsonPropertyName("sl_status")] string? SlStatus,
+        [property: JsonPropertyName("sl_completed")] int SlCompleted);
 }

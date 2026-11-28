@@ -7,7 +7,7 @@ $external = Join-Path $root 'external'
 $repo = Join-Path $external 'AlphaDefect-Public'
 $cache = Join-Path $external 'alphadefect-upstream.git'
 $stamp = Join-Path $repo 'UPSTREAM_COMMIT'
-$patch = (Resolve-Path (Join-Path $root 'patches/alphadefect-v1140-win.patch')).Path
+$patches = @('alphadefect-v1140-win.patch', 'alphadefect-v1140-solver-pool.patch', 'necropilot-room-save.patch')
 
 function Invoke-Git {
     & git @args
@@ -47,9 +47,12 @@ if (Test-Path -LiteralPath (Join-Path $repo '.git')) {
 if ($head -ne $revision) {
     throw "Expected $revision at $repo, found $head. Use a fresh project checkout or review the existing checkout."
 }
-& git @gitContext apply --reverse --check --quiet $patch
-if ($LASTEXITCODE -ne 0) {
-    Invoke-Git @gitContext apply --check $patch
-    Invoke-Git @gitContext apply $patch
+foreach ($name in $patches) {
+    $patch = (Resolve-Path (Join-Path $root "patches/$name")).Path
+    & git @gitContext apply --reverse --check --quiet $patch
+    if ($LASTEXITCODE -ne 0) {
+        Invoke-Git @gitContext apply --check $patch
+        Invoke-Git @gitContext apply $patch
+    }
 }
 Write-Host "AlphaDefect $revision is ready at $repo/game-v0.114.0"

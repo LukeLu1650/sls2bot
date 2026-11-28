@@ -126,6 +126,9 @@ def main(argv=None) -> int:
         _emit({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
         return 1
 
+    from live_combat_sl import CombatSearch
+
+    combat_search = None
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -136,10 +139,22 @@ def main(argv=None) -> int:
                 _emit({"type": "error", "error": f"Unknown request type: {req.get('type')}"})
                 continue
             raw = base64.b64decode(req["frame"])
-            _emit(_infer_one(engine, raw))
+            reply = _infer_one(engine, raw)
+            if req.get("room_save") and req.get("room") in ("Monster", "Elite", "Boss"):
+                try:
+                    if combat_search is None:
+                        combat_search = CombatSearch(cfg, args.config.parent)
+                    reply.update(combat_search.search(engine, raw, req["room_save"], req["room"]))
+                except Exception as exc:
+                    print(f"[live SL] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                    traceback.print_exc(file=sys.stderr)
+                    reply["sl_status"] = "engine_error"
+            _emit(reply)
         except Exception as exc:
             traceback.print_exc(file=sys.stderr)
             _emit({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
+    if combat_search is not None:
+        combat_search.close()
     return 0
 
 

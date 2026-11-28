@@ -1,0 +1,73 @@
+diff --git a/game-v0.114.0/engine/Sts2Headless/Engine/RunSession.cs b/game-v0.114.0/engine/Sts2Headless/Engine/RunSession.cs
+index a93a1b3..3351924 100644
+--- a/game-v0.114.0/engine/Sts2Headless/Engine/RunSession.cs
++++ b/game-v0.114.0/engine/Sts2Headless/Engine/RunSession.cs
+@@ -173,6 +173,12 @@ public sealed class RunSession : IDisposable
+     /// <summary>遭遇的词表 ID（练习规格里的遭遇可带可不带 ENCOUNTER. 前缀）。</summary>
+     static int EncounterId(string? e) => string.IsNullOrEmpty(e) ? 0 : Vocab.Id("ENCOUNTER." + e.Replace("ENCOUNTER.", ""));
+ 
++    internal static RunSession StartFromRoomSave(MegaCrit.Sts2.Core.Saves.SerializableRun save)
++    {
++        Observation.Stage = 0; Observation.BossPrev = Observation.BossNext = 0;
++        return Begin(() => HeadlessRun.StartFromRoomSave(save), combatOnly: false);
++    }
++
+     public static RunSession Start(string characterId, int ascension, string seed)
+     {
+         Observation.Stage = 0; Observation.BossPrev = Observation.BossNext = 0;
+diff --git a/game-v0.114.0/engine/Sts2Headless/HeadlessRun.cs b/game-v0.114.0/engine/Sts2Headless/HeadlessRun.cs
+index e0b97d3..ec5965d 100644
+--- a/game-v0.114.0/engine/Sts2Headless/HeadlessRun.cs
++++ b/game-v0.114.0/engine/Sts2Headless/HeadlessRun.cs
+@@ -24,6 +24,16 @@ public static class HeadlessRun
+     /// </summary>
+     public static int BonusHp;
+ 
++    internal static async Task StartFromRoomSave(MegaCrit.Sts2.Core.Saves.SerializableRun save)
++    {
++        var manager = RunManager.Instance;
++        var state = RunState.FromSerializable(save);
++        await manager.SetUpSavedSingleplayer(state, save);
++        manager.Launch();
++        await manager.GenerateMap();
++        await manager.LoadIntoLatestMapCoord(null);
++    }
++
+     /// <summary>建立一局（到 Launch 为止，不进入第一幕）：全解锁、无修改器，模式按 Mode（默认标准模式）。</summary>
+     public static async Task CreateRun(string characterId, int ascension, string seed)
+     {
+diff --git a/game-v0.114.0/engine/Sts2Headless/Program.cs b/game-v0.114.0/engine/Sts2Headless/Program.cs
+index cc51836..efa4cbc 100644
+--- a/game-v0.114.0/engine/Sts2Headless/Program.cs
++++ b/game-v0.114.0/engine/Sts2Headless/Program.cs
+@@ -5,6 +5,10 @@ using Sts2Headless;
+ // 管道模式：标准输出只用于协议帧，其余输出都写标准错误。必须在碰到游戏程序集之前设置：
+ // v0.111.0 起 sts2.dll 的模块初始化器（Sentry）会往 Console.Out 打一行字，晚了就会混进协议帧，Python 端读到乱的帧长后一直等
+ if (args.FirstOrDefault(a => !a.StartsWith('-')) == "serve") Console.SetOut(Console.Error);
++// Steam's Godot process can pass its Sentry native library to child processes. The
++// game assembly's module initializer would call that library before our shims run.
++// A standalone headless process has no Godot extension to initialize.
++Environment.SetEnvironmentVariable("SENTRY_GODOT_LIB_PATH", null);
+ GameAssemblies.Register();
+ Cli.Run(args);
+ 
+diff --git a/game-v0.114.0/engine/Sts2Headless/Server.cs b/game-v0.114.0/engine/Sts2Headless/Server.cs
+index bf2e7f1..abb8f43 100644
+--- a/game-v0.114.0/engine/Sts2Headless/Server.cs
++++ b/game-v0.114.0/engine/Sts2Headless/Server.cs
+@@ -227,7 +227,14 @@ public static class Server
+                         // 整局可带 "act_start"（开幕快照，见 ActStart）：从那一幕开局
+                         ActStartSnapshot? actStart = mode != "combat" && req.TryGetProperty("act_start", out var ast) && ast.ValueKind == JsonValueKind.Object
+                             ? ast.Deserialize<ActStartSnapshot>(JsonOptions) : null;
+-                        run = mode == "combat"
++                        if (req.TryGetProperty("room_save", out var roomSave))
++                        {
++                            var parsed = MegaCrit.Sts2.Core.Saves.SaveManager.FromJson<MegaCrit.Sts2.Core.Saves.SerializableRun>(roomSave.GetString()!);
++                            if (!parsed.Success || parsed.SaveData == null)
++                                throw new ArgumentException($"Invalid room save: {parsed.Status}");
++                            run = RunSession.StartFromRoomSave(parsed.SaveData);
++                        }
++                        else run = mode == "combat"
+                             ? RunSession.StartCombat(req.GetProperty("spec").Deserialize<CombatSpec>(JsonOptions)!)
+                             : actStart != null
+                                 ? RunSession.StartFromAct(req.GetProperty("character").GetString()!, req.GetProperty("ascension").GetInt32(), req.GetProperty("seed").GetString()!, actStart)

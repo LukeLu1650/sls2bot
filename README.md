@@ -1,6 +1,6 @@
-# 杀戮尖塔 2 · 骨人零搜索策略
+# 杀戮尖塔 2 · 骨人强化学习
 
-本项目面向《杀戮尖塔 2》（Slay the Spire 2）**标准模式 · 死灵契约师（Necrobinder / 骨人）**，目标是**零真人数据、严格 No-SL、纯从零强化学习**攻克标准 **Ascension 10（A10）**。每次决策读取全部玩家可见局面与候选动作，一次前向推理直接出牌或做局外构筑选择，并提供同名实机 AI Mod（`NecroPilot v0.2.1`）可在 Steam 正版游戏中实时接管或诊断。
+本项目面向《杀戮尖塔 2》（Slay the Spire 2）**标准模式 · 死灵契约师（Necrobinder / 骨人）**，以零真人数据的强化学习训练 A10 策略。主线记录贪心整局成绩。Steam 实机 Mod **NecroPilot v0.2.2** 支持自动接管和可选的后台战斗 SL，局外每个决定执行一次。
 
 ## 当前主线进展（`v0.114.0` · A10 · 原生 Windows 高吞吐底座）
 
@@ -20,9 +20,10 @@
 | **`v3050`** | **`100.0M`** | **EMA** | **`31.00`** | **`112/128 (87.5%)`** | **`25/128 (19.5%)`** | **`112/125 (89.6%)`** | **`25/67 (37.3%)`** | `0/13 (0.0%)` |
 | `v3050` (diag) | `100.0M` | raw | `28.02` | `99/128 (77.3%)` | `15/128 (11.7%)` | `99/122 (81.1%)` | `15/50 (30.0%)` | `2/8 (25.0%)` |
 
-### 2. 进行中与下一阶段实验
+### 2. 后续训练与战斗 SL
 - **方案 C（`v3050` 后期整局占比分叉，`100M → 130M`）**：直接从 `v3050` 分叉 `+3,000 万步`，对比 `run_fraction = 0.50`（主机 5070 Ti，`2×20` 路 = 精确 `50.0%`）与 `run_fraction = 0.75`（协作机 4070，`2×12` 路 = 精确 `75.0%`），配合 [eval_handover_probe.py](scripts/eval_handover_probe.py) 冻结战斗策略接手探针解耦构筑准备与战斗执行。
-- **Step 1（后期求解器错题专项）**：已通过 [verify_boss_solver.py](scripts/verify_boss_solver.py) 在独立 `A10MINE` 种子上完成小规模验证（同初态固定种子下，策略败局中搜出并经干净引擎 100% 复验通过 `7/29 = 24.1%`，单核产率 `71.6` 题/小时，`verify_failed = 0`），将在方案 C 评完后无缝接入。
+- **Step 1 求解器组**：从 `v3965`（130M）继续 PPO，到达 `v4879`（160M）。训练接入 250 道 A2 Boss 复验题。历史 `A10EVAL` 贪心评测进 Act 3 为 36/128，A10 通关 1/128。
+- **战斗 SL 对拍**：固定重试预算与 FP32 推理下，`v4879 EMA` 和局外适应后的 `U08 raw` 在 `A10VAL` 上分别有 58/128 和 60/128 局进入 Act 3。完整训练和评测口径见 [实验台账](docs/experiment-ledger.md)。
 
 ---
 
@@ -36,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_4070.ps1
 ```
 
 - **参与 4070 协作训练**：下载 [v3050/latest.pt](https://github.com/LukeLu1650/sls2bot/releases/download/v3050/latest.pt)，按 [docs/4070-guide.md](docs/4070-guide.md) 放好断点并编译本地正版 `v0.114.0` 无头引擎即可开跑（`+3,000 万步` 约 `12–16 小时`）。
-- **安装实机 AI Mod（`NecroPilot v0.2.1`）**：详见 [docs/live-pilot.md](docs/live-pilot.md)，支持游戏内 **F7 自动接管**、**F6 一键记录异常快照**，并可通过 [scripts/update_live_weights.py](scripts/update_live_weights.py) 免重编热切换 `v3050` 等检查点。
+- **安装实机 AI Mod（`NecroPilot v0.2.2`）**：详见 [docs/live-pilot.md](docs/live-pilot.md)。**F7** 接管，**F8** 切换战斗 SL，**F6** 记录异常。用 [scripts/update_live_weights.py](scripts/update_live_weights.py) 热切换检查点。
 - **统一评测与诊断工具**：
   - [scripts/eval_v1140.py](scripts/eval_v1140.py)：锁定 A10 种子批量 `EMA / raw` 评测（内置防 `A10EVAL` 种子泄漏保护）
   - [scripts/eval_handover_probe.py](scripts/eval_handover_probe.py)：冻结战斗策略 Boss 接手探针
@@ -50,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_4070.ps1
 | 入口 | 内容 |
 | --- | --- |
 | [RTX 4070 协作训练指南](docs/4070-guide.md) | 零重练从 `v3050` 分叉续训 `rf=0.75` 的完整环境搭建、编译自检、监控与评测步骤 |
-| [实机接管与诊断 Mod（NecroPilot v0.2.1）](docs/live-pilot.md) | 面向 Steam `v0.114.0`，复用原生观测编码器与 `.pt` 检查点（F7 接管 / F6 异常快照 / 权重热切换） |
+| [实机接管与诊断 Mod（NecroPilot v0.2.2）](docs/live-pilot.md) | 面向 Steam `v0.114.0`，支持实时接管、战斗 SL、异常快照和权重热切换 |
 | [实验台账与工程决策日志](docs/experiment-ledger.md) | 按时间顺序记录的改动、版本指纹、吞吐基准与 128 种子评测汇总 |
 
 ### 历史阶段与归档文档（`v0.113.1` PPO v2 / 早期探索）
